@@ -59,11 +59,13 @@ changes, use **Reconfigure** on the entry.
 | Entity | Notes |
 | --- | --- |
 | Water column | Inches of water above the chamber's trapped air, from the last report. Transmitter hardware 16 only. |
+| Transmitter status | *Awaiting first report*, *Reporting* or *Overdue*: where the transmitter stands. |
 | Last report | When this integration first saw the current report. |
 | Report overdue | Problem sensor: on when no new report has arrived for 13 hours. |
 | Battery voltage | Transmitter battery pack; about 7 V is full. |
 | Raw pressure reading | The transmitter's A/D count, for diagnosing leaks and calibration. |
 | Transmitter signal | LoRa signal of the last report, in dBm. |
+| Paired transmitter ID | The LoRa ID of the transmitter the receiver is paired with, known before it ever reports. |
 | Failed transmissions | Receiver's count of failed reports; resets when it restarts. |
 | Zero point | *Disabled by default.* The reading with the chamber out of the water. |
 | Transmitter temperature | *Disabled by default.* An uncalibrated CPU temperature. |
@@ -97,6 +99,20 @@ a blank page always counts as new, even if its values match the last one. The in
 the last reading, and its timestamp, in Home Assistant storage, so the water
 column stays available through receiver and Home Assistant restarts. Use
 **Last report** and **Report overdue** to judge its age.
+
+### Adding a receiver before its transmitter
+
+You can add a receiver as soon as it is on WiFi, before its transmitter is in
+the tank. Kits ship with the receiver already paired, so **Paired transmitter
+ID** shows the transmitter's ID straight away, and **Transmitter status** reads
+*Awaiting first report*. The transmitter's own entities (water column, battery,
+signal, last report and report overdue) stay unavailable until the first
+report arrives, because there is nothing to show yet. Pressing the button on the
+side of the transmitter sends one; within a minute the status moves to
+*Reporting* and the other entities fill in.
+
+A receiver added while its status page is blank after a restart starts in the
+same state, and leaves it with the transmitter's next report.
 
 ## Safety
 

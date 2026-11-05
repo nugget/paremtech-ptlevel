@@ -50,11 +50,22 @@
       "last_report": {
         "name": "Last report"
       },
+      "paired_transmitter": {
+        "name": "Paired transmitter ID"
+      },
       "raw_pressure": {
         "name": "Raw pressure reading"
       },
       "transmitter_signal": {
         "name": "Transmitter signal"
+      },
+      "transmitter_status": {
+        "name": "Transmitter status",
+        "state": {
+          "awaiting_first_report": "Awaiting first report",
+          "reporting": "Reporting",
+          "overdue": "Overdue"
+        }
       },
       "transmitter_temperature": {
         "name": "Transmitter temperature"

@@ -1,0 +1,19 @@
+{
+ "free_space": "651264",
+ "rx_id": "2",
+ "tx_id": "198",
+ "tx_rssi": "",
+ "rx_rssi": "-44",
+ "firmware_version": "214",
+ "hardware_version": "4",
+ "id": "C8C9A3000002",
+ "ip": "192.0.2.101",
+ "subnet": "255.255.252.0",
+ "gateway": "192.0.2.1",
+ "dns": "unknown",
+ "tx_firmware_version": "",
+ "tx_hardware_version": "0",
+ "fails": "0",
+ "rx_sensors": "[]",
+ "tx_sensors": ""
+}

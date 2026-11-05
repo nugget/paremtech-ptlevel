@@ -25,7 +25,9 @@ from homeassistant.const import (
     UnitOfLength,
     UnitOfTemperature,
 )
+from homeassistant.util import dt as dt_util
 
+from .coordinator import TRANSMITTER_STATUSES
 from .entity import PTLevelEntity
 
 if TYPE_CHECKING:
@@ -38,7 +40,7 @@ if TYPE_CHECKING:
     from . import PTLevelConfigEntry
     from .coordinator import PTLevelData
 
-type SensorValue = float | int | datetime | None
+type SensorValue = float | int | str | datetime | None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -64,6 +66,13 @@ SENSOR_DESCRIPTIONS: tuple[PTLevelSensorEntityDescription, ...] = (
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=1,
         value_fn=_water_column,
+    ),
+    PTLevelSensorEntityDescription(
+        key="transmitter_status",
+        translation_key="transmitter_status",
+        device_class=SensorDeviceClass.ENUM,
+        options=TRANSMITTER_STATUSES,
+        value_fn=lambda data: data.transmitter_status(dt_util.utcnow()),
     ),
     PTLevelSensorEntityDescription(
         key="last_report",
@@ -123,6 +132,12 @@ SENSOR_DESCRIPTIONS: tuple[PTLevelSensorEntityDescription, ...] = (
         entity_category=EntityCategory.DIAGNOSTIC,
         entity_registry_enabled_default=False,
         value_fn=lambda data: data.status.wifi_rssi,
+    ),
+    PTLevelSensorEntityDescription(
+        key="paired_transmitter",
+        translation_key="paired_transmitter",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: data.status.tx_id,
     ),
     PTLevelSensorEntityDescription(
         key="failed_transmissions",

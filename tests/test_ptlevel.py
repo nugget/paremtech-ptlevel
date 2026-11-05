@@ -54,6 +54,17 @@ class ParseConfigJsonTest(unittest.TestCase):
             ),
         )
 
+    def test_receiver_awaiting_its_transmitter(self) -> None:
+        """A new receiver knows its paired transmitter before any report."""
+        status = parse_config_json(load_payload("config_awaiting_transmitter"))
+
+        self.assertEqual(status.receiver_id, "C8C9A3000002")
+        self.assertEqual((status.rx_id, status.tx_id), ("2", "198"))
+        self.assertIsNone(status.reading)
+        self.assertIsNone(status.tx_rssi)
+        self.assertIsNone(status.tx_hardware_version)
+        self.assertEqual(status.failed_transmissions, 0)
+
     def test_after_receiver_restart(self) -> None:
         """A restarted receiver has no report, and blanks transmitter fields."""
         status = parse_config_json(load_payload("config_after_restart"))
