@@ -27,6 +27,22 @@ def test_english_translation_matches_strings() -> None:
     assert english == _strings()
 
 
+def test_english_translation_is_literal() -> None:
+    """No ``[%key:…%]`` references: custom integrations never resolve them."""
+    english = INTEGRATION.joinpath("translations/en.json").read_text(encoding="utf-8")
+    assert "[%key" not in english
+
+
+def test_manifest_declares_marketplace_metadata() -> None:
+    """Categories (primary first) and connectivity are declared for 2026.11."""
+    manifest = json.loads(
+        INTEGRATION.joinpath("manifest.json").read_text(encoding="utf-8")
+    )
+    assert 1 <= len(manifest["categories"]) <= 3
+    assert manifest["categories"][0] == "water.meters_leak_detection"
+    assert manifest["connectivity"] == ["network"]
+
+
 def test_every_entity_has_a_translated_name() -> None:
     """Each description's translation key has a name in strings.json."""
     entity = _strings()["entity"]

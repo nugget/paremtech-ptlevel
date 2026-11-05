@@ -40,9 +40,11 @@ local page this integration depends on is not expected to change.
 
 ## Installation
 
-1. In HACS, add `https://github.com/nugget/paremtech-ptlevel` as a custom
-   repository of type *Integration*.
-2. Install **ParemTech PTLevel** and restart Home Assistant.
+1. In **Settings → Marketplace**, add `https://github.com/nugget/paremtech-ptlevel`
+   as a custom repository of type *Integration*. On Home Assistant older than
+   2026.11, do the same in HACS.
+2. Install **ParemTech PTLevel**. A first install needs no restart on 2026.11
+   and later; updates, and installs through HACS, still do.
 3. Give each receiver a DHCP reservation. Receivers do not announce themselves,
    and every unit sends the same DHCP hostname, `PTLevel-Wireless`.
 4. Go to **Settings → Devices & services → Add integration → ParemTech PTLevel**

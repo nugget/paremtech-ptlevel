@@ -19,10 +19,10 @@ PACKAGE_NAME = "paremtech-ptlevel"
 
 
 class RepositoryMetadataTest(unittest.TestCase):
-    """Test release and HACS metadata consistency."""
+    """Test release and Marketplace metadata consistency."""
 
-    def test_hacs_repository_contains_one_integration(self) -> None:
-        """Keep the repository layout valid for HACS integration installs."""
+    def test_repository_contains_one_integration(self) -> None:
+        """Keep the repository layout valid for Marketplace integration installs."""
         integrations = [
             path
             for path in ROOT.joinpath("custom_components").iterdir()
@@ -105,7 +105,7 @@ def _pyproject() -> dict[str, Any]:
 
 
 def _hacs() -> dict[str, Any]:
-    """Return HACS repository metadata."""
+    """Return the Marketplace repository metadata in ``hacs.json``."""
     return json.loads(ROOT.joinpath("hacs.json").read_text(encoding="utf-8"))
 
 
