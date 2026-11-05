@@ -25,6 +25,7 @@
     },
     "error": {
       "cannot_connect": "Could not reach a PTLevel receiver at that address.",
+      "invalid_host": "Enter just a hostname or IP address, without http://, a port or a path.",
       "unsupported_receiver": "Something answered at that address, but not a supported PTLevel receiver. Only Version 1 receivers (firmware 2xx, no button on the front) are supported so far."
     },
     "abort": {

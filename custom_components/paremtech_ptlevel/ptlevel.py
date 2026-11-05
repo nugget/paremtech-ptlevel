@@ -215,6 +215,10 @@ class PTLevelClient:
     async def async_get_status(self) -> ReceiverStatus:
         """Read and parse the receiver's status.
 
+        Redirects are never followed: a redirect could point at one of the
+        receiver's action paths, so it counts as an HTTP error like any other
+        non-200 answer.
+
         Raises :class:`PTLevelConnectionError` when the receiver does not
         answer or answers with an HTTP error, and
         :class:`PTLevelUnsupportedError` when the answer is not a
@@ -222,7 +226,9 @@ class PTLevelClient:
         """
         url = self.url()
         try:
-            async with self._session.get(url, timeout=self._timeout) as response:
+            async with self._session.get(
+                url, timeout=self._timeout, allow_redirects=False
+            ) as response:
                 if response.status != 200:  # noqa: PLR2004
                     raise PTLevelConnectionError(
                         f"{self.host} answered HTTP {response.status}"
@@ -241,9 +247,18 @@ class PTLevelClient:
         if not isinstance(payload, dict):
             raise PTLevelUnsupportedError(f"{self.host} answered with a non-object")
 
-        _LOGGER.debug("PTLevel receiver %s status: %s", self.host, payload)
+        status = parse_config_json(payload)
+        # Log parsed fields only: a future firmware's raw payload could carry
+        # WiFi credentials, and this runs before anything is redacted.
+        _LOGGER.debug(
+            "PTLevel receiver %s is %s, firmware %s, reading %s",
+            self.host,
+            status.receiver_id,
+            status.firmware_version,
+            status.reading,
+        )
         self.last_payload = payload
-        return parse_config_json(payload)
+        return status
 
 
 def _parse_tx_sensors(value: Any) -> TransmitterReading | None:

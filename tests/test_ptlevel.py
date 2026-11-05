@@ -146,7 +146,24 @@ class ClientTest(unittest.IsolatedAsyncioTestCase):
             ["http://192.0.2.100/config?json=true"],
         )
         self.assertTrue(all(url.path in READ_PATHS for url in session.requested))
+        self.assertEqual(session.allow_redirects, [False])
         self.assertEqual(client.last_payload, load_payload("config_reading"))
+
+    async def test_debug_log_omits_raw_payload(self) -> None:
+        """Debug logging shows parsed fields, never raw payload values."""
+        payload = load_payload("config_reading") | {"ssid": "HOME", "pass": "hunter2"}
+        session = FakeSession(text=json.dumps(payload))
+        client = PTLevelClient(cast("aiohttp.ClientSession", session), "192.0.2.100")
+
+        with self.assertLogs(
+            "custom_components.paremtech_ptlevel.ptlevel", level="DEBUG"
+        ) as logs:
+            await client.async_get_status()
+
+        output = "\n".join(logs.output)
+        self.assertIn("4022D8000001", output)
+        self.assertNotIn("hunter2", output)
+        self.assertNotIn("HOME", output)
 
     def test_refuses_action_paths(self) -> None:
         """The client cannot build a URL for the receiver's action paths."""
@@ -166,6 +183,7 @@ class ClientTest(unittest.IsolatedAsyncioTestCase):
         """Network and protocol failures map to the two error types."""
         cases: tuple[tuple[str, FakeSession, type[Exception]], ...] = (
             ("HTTP error", FakeSession(status=500), PTLevelConnectionError),
+            ("redirect", FakeSession(status=302), PTLevelConnectionError),
             (
                 "connection refused",
                 FakeSession(error=aiohttp.ClientConnectionError("refused")),
@@ -201,10 +219,12 @@ class FakeSession:
         self.status = status
         self.error = error
         self.requested: list[Any] = []
+        self.allow_redirects: list[bool] = []
 
-    def get(self, url: Any, **_kwargs: Any) -> FakeResponse:
-        """Record the URL and return a response context manager."""
+    def get(self, url: Any, **kwargs: Any) -> FakeResponse:
+        """Record the URL and redirect policy; return a response context manager."""
         self.requested.append(url)
+        self.allow_redirects.append(kwargs.get("allow_redirects", True))
         return FakeResponse(self)
 
 

@@ -206,6 +206,29 @@ async def test_removing_entry_deletes_stored_report(
     assert storage_key(entry.entry_id) not in hass_storage
 
 
+async def test_removing_entry_during_pending_save_stays_removed(
+    hass: HomeAssistant,
+    entry: MockConfigEntry,
+    receiver: FakeReceiver,
+    freezer: FrozenDateTimeFactory,
+    hass_storage: dict[str, Any],
+) -> None:
+    """A save still pending at removal cannot recreate the stored report."""
+    freezer.move_to(START)
+    await _setup(hass, entry)
+    await _poll(hass, freezer)
+    receiver.set_reading(34300, tx_rssi="-121")
+    await _poll(hass, freezer)
+
+    assert await hass.config_entries.async_remove(entry.entry_id)
+    await hass.async_block_till_done()
+    freezer.tick(timedelta(seconds=5))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+
+    assert storage_key(entry.entry_id) not in hass_storage
+
+
 @pytest.mark.parametrize(
     "cause",
     ["unreachable", "different receiver"],

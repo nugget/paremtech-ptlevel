@@ -117,6 +117,58 @@ async def test_reconfigure_moves_entry_to_new_address(hass: HomeAssistant) -> No
     assert entry.data[CONF_HOST] == "192.0.2.100"
 
 
+@pytest.mark.parametrize(
+    "host",
+    [
+        "http://192.0.2.100",
+        "192.0.2.100:80",
+        "192.0.2.100/config",
+        "ptlevel wellsw",
+        "   ",
+    ],
+)
+async def test_flows_reject_malformed_hosts(
+    hass: HomeAssistant, receiver: FakeReceiver, host: str
+) -> None:
+    """URLs, ports and paths get a field error without probing anything."""
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_USER}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_HOST: host}
+    )
+    assert result.get("type") is FlowResultType.FORM
+    assert result.get("errors") == {CONF_HOST: "invalid_host"}
+
+    entry = MockConfigEntry(
+        domain=DOMAIN, unique_id=RECEIVER_ID, data={CONF_HOST: "192.0.2.50"}
+    )
+    entry.add_to_hass(hass)
+    result = await entry.start_reconfigure_flow(hass)
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_HOST: host}
+    )
+    assert result.get("type") is FlowResultType.FORM
+    assert result.get("errors") == {CONF_HOST: "invalid_host"}
+    assert receiver.hosts == []
+
+
+async def test_user_flow_accepts_bracketed_ipv6(
+    hass: HomeAssistant, receiver: FakeReceiver
+) -> None:
+    """An IPv6 address may be typed with or without brackets."""
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_USER}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_HOST: "[2001:db8::100]"}
+    )
+
+    assert result.get("type") is FlowResultType.CREATE_ENTRY
+    assert result.get("data") == {CONF_HOST: "2001:db8::100"}
+    assert receiver.hosts[0] == "2001:db8::100"
+
+
 async def test_reconfigure_refuses_a_different_receiver(
     hass: HomeAssistant, receiver: FakeReceiver
 ) -> None:

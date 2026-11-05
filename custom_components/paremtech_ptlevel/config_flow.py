@@ -9,6 +9,7 @@ import probatio
 from homeassistant import config_entries
 from homeassistant.const import CONF_HOST
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from yarl import URL
 
 from .const import DOMAIN
 from .ptlevel import (
@@ -43,7 +44,13 @@ class PTLevelConfigFlow(  # pyright: ignore[reportGeneralTypeIssues]
         """Ask for the receiver's address and validate it."""
         errors: dict[str, str] = {}
         if user_input is not None:
-            host = user_input[CONF_HOST].strip()
+            host = _normalize_host(user_input[CONF_HOST])
+            if host is None:
+                return self.async_show_form(
+                    step_id="user",
+                    data_schema=_schema(user_input),
+                    errors={CONF_HOST: "invalid_host"},
+                )
             status, error = await self._async_probe(host)
             if status is not None:
                 await self.async_set_unique_id(status.receiver_id)
@@ -65,7 +72,13 @@ class PTLevelConfigFlow(  # pyright: ignore[reportGeneralTypeIssues]
         entry = self._get_reconfigure_entry()
         errors: dict[str, str] = {}
         if user_input is not None:
-            host = user_input[CONF_HOST].strip()
+            host = _normalize_host(user_input[CONF_HOST])
+            if host is None:
+                return self.async_show_form(
+                    step_id="reconfigure",
+                    data_schema=_schema(user_input),
+                    errors={CONF_HOST: "invalid_host"},
+                )
             status, error = await self._async_probe(host)
             if status is not None:
                 await self.async_set_unique_id(status.receiver_id)
@@ -92,6 +105,26 @@ class PTLevelConfigFlow(  # pyright: ignore[reportGeneralTypeIssues]
         except PTLevelUnsupportedError as err:
             _LOGGER.debug("PTLevel receiver at %s unsupported: %s", host, err)
             return None, "unsupported_receiver"
+
+
+def _normalize_host(text: str) -> str | None:
+    """Return a bare hostname or IP address, or ``None`` if ``text`` is not one.
+
+    Brackets around an IPv6 address are dropped. URLs, ports, paths and anything
+    else ``yarl`` cannot use as a host are rejected rather than guessed at.
+    """
+    host = text.strip()
+    if host.startswith("[") and host.endswith("]"):
+        host = host[1:-1]
+    if not host or any(char in host for char in "/@?#[] "):
+        return None
+    if host.count(":") == 1:  # a port, not an IPv6 address
+        return None
+    try:
+        URL.build(scheme="http", host=host)
+    except ValueError:
+        return None
+    return host
 
 
 def _schema(defaults: dict[str, Any] | None) -> probatio.Schema:

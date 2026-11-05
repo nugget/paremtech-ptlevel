@@ -141,6 +141,16 @@ class PTLevelCoordinator(DataUpdateCoordinator[PTLevelData]):
             status=status, reading=self._reading, last_report=self._last_report
         )
 
+    async def async_shutdown(self) -> None:
+        """Write any pending report now, so nothing is written after unload.
+
+        A delayed save still pending when the entry is removed would otherwise
+        recreate the stored report after ``async_remove_entry`` deleted it.
+        """
+        await super().async_shutdown()
+        if self._reading is not None:
+            await self._store.async_save(self._stored_report())
+
     def _stored_report(self) -> dict[str, Any]:
         """Return the last report in its storage form."""
         if self._reading is None or self._last_report is None:
