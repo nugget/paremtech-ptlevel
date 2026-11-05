@@ -191,6 +191,7 @@ lock:
     uv lock
 
 # Re-render the brand PNGs from assets/brand/*.svg (needs rsvg-convert).
+# Icons are 256 and 512 px squares; logos are 256 and 512 px tall.
 [group('develop')]
 brand:
     #!/usr/bin/env bash
@@ -200,6 +201,10 @@ brand:
     for name in icon dark_icon; do
       rsvg-convert -w 256 -h 256 -o "$out/$name.png" "assets/brand/$name.svg"
       rsvg-convert -w 512 -h 512 -o "$out/$name@2x.png" "assets/brand/$name.svg"
+    done
+    for name in logo dark_logo; do
+      rsvg-convert -h 256 -o "$out/$name.png" "assets/brand/$name.svg"
+      rsvg-convert -h 512 -o "$out/$name@2x.png" "assets/brand/$name.svg"
     done
     echo "rendered $(ls "$out" | tr '\n' ' ')"
 

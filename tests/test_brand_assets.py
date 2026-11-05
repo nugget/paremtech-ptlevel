@@ -38,6 +38,25 @@ class BrandAssetsTest(unittest.TestCase):
                 self.assertEqual((width, height), (size, size))
                 self.assertEqual(color_type, COLOR_TYPE_RGBA)
 
+    def test_logos_are_landscape_transparent_and_sized(self) -> None:
+        """Logos are landscape RGBA, 256 px tall, and 512 px for the hDPI version.
+
+        The brands spec allows a shortest side of 128-256 px (256-512 px for
+        hDPI) and prefers the maximum.
+        """
+        cases = (
+            ("logo.png", 256),
+            ("logo@2x.png", 512),
+            ("dark_logo.png", 256),
+            ("dark_logo@2x.png", 512),
+        )
+        for name, shortest in cases:
+            with self.subTest(name):
+                width, height, color_type = _png_header(BRAND / name)
+                self.assertEqual(height, shortest)
+                self.assertGreater(width, height)
+                self.assertEqual(color_type, COLOR_TYPE_RGBA)
+
     def test_every_image_has_a_source(self) -> None:
         """Each rendered image comes from an SVG in assets/brand."""
         for png in BRAND.glob("*.png"):

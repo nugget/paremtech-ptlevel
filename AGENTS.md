@@ -184,12 +184,19 @@ incomplete.
 - Keep exactly one integration under `custom_components/` for the Marketplace.
 - Brand images live in `custom_components/paremtech_ptlevel/brand/`. Home
   Assistant reads that folder since 2026.3 and prefers it to the brands repo.
-  They are original artwork: a cistern with a level gauge, in light and
-  `dark_` variants at 256 and 512 px. Never use ParemTech's cloud mark, which
-  is the official cloud integration's tile, or Home Assistant branding. The
-  sources are `assets/brand/*.svg`; edit those and run `just brand`. There is
-  no logo, so Home Assistant falls back to the icon, as the brands spec allows
-  when the two would be the same image.
+  - **Icon:** original art, a cistern with a level gauge in ParemTech's
+    palette (charcoal `#545454`, red `#E04C53`, with blue water).
+  - **Logo:** the cistern beside ParemTech's company mark (the red arrow and
+    PAREMTECH wordmark), with the arrow pointing at the water line.
+  - The company mark is cropped unaltered from ParemTech's own images in
+    Home Assistant's brands repo (`core_integrations/ptdevices/logo@2x.png`
+    and `dark_logo@2x.png`, region x 1038–1727, y 318–511) into
+    `assets/brand/*paremtech_mark.png`.
+  - Never use ParemTech's cloud icon or the PTDevices wordmark: they belong
+    to the cloud service, and this integration is the local, no-cloud
+    alternative with its own tile. Never use Home Assistant branding.
+  - Every image has light and `dark_` variants at 1x and 2x. Edit the
+    sources in `assets/brand/` and run `just brand`.
 - All runtime files required by Home Assistant belong inside
   `custom_components/paremtech_ptlevel/`.
 - Keep `manifest.json`, `hacs.json`, `README.md`, translations, and brand assets
