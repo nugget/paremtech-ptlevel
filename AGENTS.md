@@ -213,6 +213,10 @@ incomplete.
   changelog as supporting detail.
 - Do not hardcode release-only behavior in integration source; keep version and
   packaging metadata in manifest/release automation.
+- Unreleased code carries version `0.0.0`, and only `just release-prepare` ever
+  changes it. `release-publish` tags the commit that set the version, so a
+  version written any other way (by hand, or in a feature PR) can tag a commit
+  that predates later reviewed fixes.
 
 ## Security & Privacy
 

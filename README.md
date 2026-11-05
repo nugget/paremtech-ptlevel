@@ -29,6 +29,12 @@ local status page. This integration reads only that page,
 | Version 1, firmware 2xx (tested: hardware 4, firmware 214) | No button on the front | Yes |
 | Version 2, firmware 4xx (spring 2024 and later) | Button on the front | Not yet: it serves a different local API |
 
+The water column is computed only for transmitter **hardware 16**, whose pressure
+scale has been checked. Older transmitters report a raw sensor voltage (zero
+point near 60) that ParemTech says must be calibrated against a measured level;
+for them the integration reports the raw reading and leaves the water column
+unavailable.
+
 ParemTech has said it will not ship further firmware for 2xx receivers, so the
 local page this integration depends on is not expected to change.
 
@@ -50,7 +56,7 @@ changes, use **Reconfigure** on the entry.
 
 | Entity | Notes |
 | --- | --- |
-| Water column | Inches of water above the chamber's trapped air, from the last report. |
+| Water column | Inches of water above the chamber's trapped air, from the last report. Transmitter hardware 16 only. |
 | Last report | When this integration first saw the current report. |
 | Report overdue | Problem sensor: on when no new report has arrived for 13 hours. |
 | Battery voltage | Transmitter battery pack; about 7 V is full. |
@@ -84,7 +90,8 @@ arrives while Home Assistant is down is stamped when Home Assistant next sees
 it.
 
 Receivers keep reports only in memory, so a receiver restart blanks its status
-page until the next report, which can be 12 hours away. The integration keeps
+page until the next report, which can be 12 hours away. The first report after
+a blank page always counts as new, even if its values match the last one. The integration keeps
 the last reading, and its timestamp, in Home Assistant storage, so the water
 column stays available through receiver and Home Assistant restarts. Use
 **Last report** and **Report overdue** to judge its age.

@@ -48,6 +48,13 @@ class PTLevelSensorEntityDescription(SensorEntityDescription):
     value_fn: Callable[[PTLevelData], SensorValue]
 
 
+def _water_column(data: PTLevelData) -> float | None:
+    """Return the water column to two decimals, or ``None`` when it has no scale."""
+    if data.reading is None or (inches := data.reading.water_column_inches) is None:
+        return None
+    return round(inches, 2)
+
+
 SENSOR_DESCRIPTIONS: tuple[PTLevelSensorEntityDescription, ...] = (
     PTLevelSensorEntityDescription(
         key="water_column",
@@ -56,9 +63,7 @@ SENSOR_DESCRIPTIONS: tuple[PTLevelSensorEntityDescription, ...] = (
         device_class=SensorDeviceClass.DISTANCE,
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=1,
-        value_fn=lambda data: (
-            round(data.reading.water_column_inches, 2) if data.reading else None
-        ),
+        value_fn=_water_column,
     ),
     PTLevelSensorEntityDescription(
         key="last_report",

@@ -46,7 +46,11 @@ class ParseConfigJsonTest(unittest.TestCase):
         self.assertEqual(
             status.reading,
             TransmitterReading(
-                raw=34236, zero=10276, battery_voltage=6.6, cpu_temperature=29.4
+                raw=34236,
+                zero=10276,
+                battery_voltage=6.6,
+                cpu_temperature=29.4,
+                hardware_version="16",
             ),
         )
 
@@ -66,12 +70,12 @@ class ParseConfigJsonTest(unittest.TestCase):
             (
                 "reordered",
                 '[{"2":6.6},{"3":15.1},{"1":10155,"z":10276}]',
-                TransmitterReading(10155, 10276, 6.6, 15.1),
+                TransmitterReading(10155, 10276, 6.6, 15.1, "16"),
             ),
             (
                 "no battery or temperature",
                 '[{"1":10155,"z":10276}]',
-                TransmitterReading(10155, 10276, None, None),
+                TransmitterReading(10155, 10276, None, None, "16"),
             ),
             ("empty list", "[]", None),
             ("no pressure", '[{"3":15.1},{"2":6.6}]', None),
@@ -121,9 +125,27 @@ class TransmitterReadingTest(unittest.TestCase):
         )
         for name, raw, counts, inches in cases:
             with self.subTest(name):
-                reading = TransmitterReading(raw, 10276, None, None)
+                reading = TransmitterReading(raw, 10276, None, None, "16")
                 self.assertEqual(reading.pressure_counts, counts)
-                self.assertAlmostEqual(reading.water_column_inches, inches, places=2)
+                column = reading.water_column_inches
+                assert column is not None
+                self.assertAlmostEqual(column, inches, places=2)
+
+    def test_unverified_hardware_has_no_water_column(self) -> None:
+        """Without a verified pressure scale, only the raw counts are reported."""
+        for hardware in ("5", "17", None):
+            with self.subTest(hardware=hardware):
+                reading = TransmitterReading(60, 58, None, None, hardware)
+                self.assertEqual(reading.pressure_counts, 2)
+                self.assertIsNone(reading.water_column_inches)
+
+    def test_hardware_comes_from_the_report(self) -> None:
+        """The reading carries the transmitter hardware it was reported with."""
+        payload = dict(load_payload("config_reading"), tx_hardware_version="5")
+        reading = parse_config_json(payload).reading
+        assert reading is not None
+        self.assertEqual(reading.hardware_version, "5")
+        self.assertIsNone(reading.water_column_inches)
 
     def test_scale(self) -> None:
         """One inch of water is about 249 counts."""

@@ -145,6 +145,43 @@ async def test_new_report_moves_last_report(
     assert _state(hass, "sensor.last_report") == (START + 2 * SCAN_INTERVAL).isoformat()
 
 
+async def test_report_after_receiver_restart_is_new_even_if_identical(
+    hass: HomeAssistant,
+    entry: MockConfigEntry,
+    receiver: FakeReceiver,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """A populated page after a blank one is a fresh reception, values aside."""
+    freezer.move_to(START)
+    await _setup(hass, entry)
+
+    freezer.tick(timedelta(hours=13, minutes=5))
+    receiver.payload = load_payload("config_after_restart")
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    assert _state(hass, "binary_sensor.report_overdue") == STATE_ON
+
+    receiver.payload = load_payload("config_reading")
+    await _poll(hass, freezer)
+
+    reported = START + timedelta(hours=13, minutes=5) + SCAN_INTERVAL
+    assert _state(hass, "sensor.last_report") == reported.isoformat()
+    assert _state(hass, "binary_sensor.report_overdue") == STATE_OFF
+
+
+async def test_unverified_transmitter_reports_raw_only(
+    hass: HomeAssistant,
+    entry: MockConfigEntry,
+    receiver: FakeReceiver,
+) -> None:
+    """Older transmitter hardware gets no water column, but keeps its raw value."""
+    receiver.payload = dict(load_payload("config_reading"), tx_hardware_version="5")
+    await _setup(hass, entry)
+
+    assert _state(hass, "sensor.water_column") == STATE_UNAVAILABLE
+    assert _state(hass, "sensor.raw_pressure_reading") == "34236"
+
+
 async def test_report_overdue_after_missed_schedule(
     hass: HomeAssistant,
     entry: MockConfigEntry,

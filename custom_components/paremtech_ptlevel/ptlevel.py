@@ -49,6 +49,14 @@ HPA_PER_INCH_OF_WATER = 2.4909
 COUNTS_PER_INCH_OF_WATER = HPA_PER_INCH_OF_WATER / HPA_PER_COUNT
 """About 249 counts per inch of water above the chamber's trapped air."""
 
+VERIFIED_TRANSMITTER_HARDWARE = frozenset({"16"})
+"""Transmitter hardware whose raw reading is known to be 0.01 hPa counts.
+
+Older transmitters report a raw sensor voltage with a zero point near 60, and
+ParemTech says those readings need calibrating against a measured level, so
+no physical scale is applied to them.
+"""
+
 _REQUIRED_KEYS = ("id", "firmware_version", "hardware_version", "tx_sensors")
 _RECEIVER_ID_LENGTH = 12
 
@@ -79,12 +87,15 @@ class TransmitterReading:
         battery_voltage: Battery pack voltage; about 7 V is full.
         cpu_temperature: Transmitter CPU temperature in °C. ParemTech
             describes it as uncalibrated, so it is diagnostic only.
+        hardware_version: Hardware revision of the transmitter that sent the
+            report, which decides whether the pressure scale is known.
     """
 
     raw: int
     zero: int
     battery_voltage: float | None
     cpu_temperature: float | None
+    hardware_version: str | None = None
 
     @property
     def pressure_counts(self) -> int:
@@ -92,14 +103,18 @@ class TransmitterReading:
         return self.raw - self.zero
 
     @property
-    def water_column_inches(self) -> float:
+    def water_column_inches(self) -> float | None:
         """Return the water standing above the chamber's air pocket, in inches.
 
         This is the physical measurement, not the tank level: the chamber's air
         pocket sits a few inches above the tank floor, and the value goes
         slightly negative when there is no pressure at all (chamber out of the
-        water, or an air leak in the tubing).
+        water, or an air leak in the tubing). It is ``None`` for transmitter
+        hardware outside :data:`VERIFIED_TRANSMITTER_HARDWARE`, whose raw
+        readings have no known physical scale.
         """
+        if self.hardware_version not in VERIFIED_TRANSMITTER_HARDWARE:
+            return None
         return self.pressure_counts / COUNTS_PER_INCH_OF_WATER
 
 
@@ -173,7 +188,9 @@ def parse_config_json(payload: Mapping[str, Any]) -> ReceiverStatus:
         tx_firmware_version=_text(payload.get("tx_firmware_version")),
         tx_hardware_version=None if tx_hardware == "0" else tx_hardware,
         failed_transmissions=_int(payload.get("fails")),
-        reading=_parse_tx_sensors(payload["tx_sensors"]),
+        reading=_parse_tx_sensors(
+            payload["tx_sensors"], None if tx_hardware == "0" else tx_hardware
+        ),
     )
 
 
@@ -261,7 +278,9 @@ class PTLevelClient:
         return status
 
 
-def _parse_tx_sensors(value: Any) -> TransmitterReading | None:
+def _parse_tx_sensors(
+    value: Any, hardware_version: str | None
+) -> TransmitterReading | None:
     """Decode the ``tx_sensors`` string, or return ``None`` when it is empty."""
     text = _text(value)
     if text is None:
@@ -286,6 +305,7 @@ def _parse_tx_sensors(value: Any) -> TransmitterReading | None:
             zero=int(sensors["z"]),
             battery_voltage=_float(sensors.get("2")),
             cpu_temperature=_float(sensors.get("3")),
+            hardware_version=hardware_version,
         )
     except (TypeError, ValueError) as err:
         raise PTLevelUnsupportedError(f"cannot decode tx_sensors {text!r}") from err

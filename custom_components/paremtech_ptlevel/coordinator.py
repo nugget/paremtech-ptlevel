@@ -6,6 +6,8 @@ treats a change in the reading's signature (pressure, zero point, battery,
 CPU temperature and LoRa signal) as a new report and stamps it with the time
 it was first seen. Two reports with identical values are therefore counted as
 one; in practice the LoRa signal and CPU temperature differ on every report.
+The exception is a receiver restart: a populated page after a blank one is a
+fresh reception whatever its values, so it is always a new report.
 
 Receivers hold reports only in memory, so a receiver restart blanks its page
 until the next report, up to 12 hours later. The coordinator keeps the last
@@ -93,6 +95,7 @@ class PTLevelCoordinator(DataUpdateCoordinator[PTLevelData]):
         self._signature: ReportSignature | None = None
         self._reading: TransmitterReading | None = None
         self._last_report: datetime | None = None
+        self._receiver_was_blank = False
 
     async def _async_setup(self) -> None:
         """Restore the last report seen before Home Assistant restarted."""
@@ -124,9 +127,12 @@ class PTLevelCoordinator(DataUpdateCoordinator[PTLevelData]):
                 f"not {expected_id}; reconfigure the entry with the right address"
             )
 
-        if status.reading is not None:
+        if status.reading is None:
+            self._receiver_was_blank = True
+        else:
             signature = _signature(status.reading, status.tx_rssi)
-            if signature != self._signature:
+            if signature != self._signature or self._receiver_was_blank:
+                self._receiver_was_blank = False
                 self._signature = signature
                 self._reading = status.reading
                 self._last_report = dt_util.utcnow()
