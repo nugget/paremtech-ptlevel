@@ -85,6 +85,8 @@ async def test_setup_creates_device_and_entities(
     assert _state(hass, "sensor.failed_transmissions") == "0"
     assert _state(hass, "sensor.last_report") == START.isoformat()
     assert _state(hass, "binary_sensor.report_overdue") == STATE_OFF
+    assert _state(hass, "sensor.transmitter_status") == "reporting"
+    assert _state(hass, "sensor.paired_transmitter_id") == "147"
 
     devices = dr.async_entries_for_config_entry(dr.async_get(hass), entry.entry_id)
     assert len(devices) == 1
@@ -200,6 +202,65 @@ async def test_report_overdue_after_missed_schedule(
     await _poll(hass, freezer)
     await _poll(hass, freezer)
     assert _state(hass, "binary_sensor.report_overdue") == STATE_ON
+    assert _state(hass, "sensor.transmitter_status") == "overdue"
+
+
+async def test_receiver_installed_before_its_transmitter(
+    hass: HomeAssistant,
+    receiver: FakeReceiver,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """A receiver with no report yet loads, and says it is awaiting one.
+
+    This is the install stage between bringing a receiver onto WiFi and the
+    transmitter's first report; then the first report moves it to reporting.
+    """
+    freezer.move_to(START)
+    hass.config.units = US_CUSTOMARY_SYSTEM
+    te_entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="WELLSW.TE",  # codespell:ignore te
+        unique_id="C8C9A3000002",
+        data={CONF_HOST: "192.0.2.101"},
+    )
+    te_entry.add_to_hass(hass)
+    receiver.payload = load_payload("config_awaiting_transmitter")
+    await _setup(hass, te_entry)
+
+    def te_state(entity_id: str) -> str:
+        state = hass.states.get(entity_id)
+        assert state is not None, entity_id
+        return state.state
+
+    assert te_entry.state is ConfigEntryState.LOADED
+    assert te_state("sensor.wellsw_te_transmitter_status") == "awaiting_first_report"
+    assert te_state("sensor.wellsw_te_paired_transmitter_id") == "198"
+    assert te_state("sensor.wellsw_te_failed_transmissions") == "0"
+    for waiting in (
+        "sensor.wellsw_te_water_column",
+        "sensor.wellsw_te_last_report",
+        "sensor.wellsw_te_battery_voltage",
+        "sensor.wellsw_te_transmitter_signal",
+        "binary_sensor.wellsw_te_report_overdue",
+    ):
+        assert te_state(waiting) == STATE_UNAVAILABLE, waiting
+
+    freezer.tick(timedelta(days=3))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    assert te_state("sensor.wellsw_te_transmitter_status") == "awaiting_first_report"
+
+    receiver.payload = load_payload("config_awaiting_transmitter") | {
+        "tx_rssi": "-98",
+        "tx_firmware_version": "18",
+        "tx_hardware_version": "16",
+        "tx_sensors": '[{"1":30500,"z":10301},{"3":21.0},{"2":6.95}]',
+    }
+    await _poll(hass, freezer)
+
+    assert te_state("sensor.wellsw_te_transmitter_status") == "reporting"
+    assert te_state("sensor.wellsw_te_water_column") == "81.09"
+    assert te_state("binary_sensor.wellsw_te_report_overdue") == STATE_OFF
 
 
 async def test_last_report_survives_home_assistant_restart(

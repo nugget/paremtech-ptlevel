@@ -37,3 +37,13 @@ def test_every_entity_has_a_translated_name() -> None:
         names = {key: value["name"] for key, value in entity[platform].items()}
         keys = {description.translation_key for description in descriptions}
         assert keys == set(names), platform
+
+
+def test_every_enum_state_is_translated() -> None:
+    """Each option of an enum sensor has a translated state name."""
+    sensors = _strings()["entity"]["sensor"]
+    for description in SENSOR_DESCRIPTIONS:
+        if description.options is None:
+            continue
+        states = sensors[description.translation_key]["state"]
+        assert set(description.options) == set(states), description.key

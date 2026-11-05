@@ -44,6 +44,15 @@ _LOGGER = logging.getLogger(__name__)
 
 type ReportSignature = tuple[int, int, float | None, float | None, int | None]
 
+TRANSMITTER_AWAITING_FIRST_REPORT = "awaiting_first_report"
+TRANSMITTER_REPORTING = "reporting"
+TRANSMITTER_OVERDUE = "overdue"
+TRANSMITTER_STATUSES = [
+    TRANSMITTER_AWAITING_FIRST_REPORT,
+    TRANSMITTER_REPORTING,
+    TRANSMITTER_OVERDUE,
+]
+
 
 @dataclass(frozen=True, slots=True)
 class PTLevelData:
@@ -70,6 +79,19 @@ class PTLevelData:
         if self.last_report is None:
             return None
         return now - self.last_report > REPORT_INTERVAL + REPORT_GRACE
+
+    def transmitter_status(self, now: datetime) -> str:
+        """Return where the transmitter stands, as one of TRANSMITTER_STATUSES.
+
+        ``awaiting_first_report`` covers a receiver installed before its
+        transmitter, or added to Home Assistant while its page is blank after
+        a restart: no report has been seen yet. After the first report it is
+        ``reporting`` until a scheduled report is missed, then ``overdue``.
+        """
+        overdue = self.report_overdue(now)
+        if overdue is None:
+            return TRANSMITTER_AWAITING_FIRST_REPORT
+        return TRANSMITTER_OVERDUE if overdue else TRANSMITTER_REPORTING
 
 
 class PTLevelCoordinator(DataUpdateCoordinator[PTLevelData]):
