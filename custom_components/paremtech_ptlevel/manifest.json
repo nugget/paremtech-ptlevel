@@ -2,10 +2,16 @@
   "domain": "paremtech_ptlevel",
   "name": "ParemTech PTLevel",
   "after_dependencies": [],
+  "categories": [
+    "water.meters_leak_detection"
+  ],
   "codeowners": [
     "@nugget"
   ],
   "config_flow": true,
+  "connectivity": [
+    "network"
+  ],
   "documentation": "https://github.com/nugget/paremtech-ptlevel",
   "integration_type": "device",
   "iot_class": "local_polling",
