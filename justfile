@@ -190,6 +190,19 @@ ha-upgrade harness="latest":
 lock:
     uv lock
 
+# Re-render the brand PNGs from assets/brand/*.svg (needs rsvg-convert).
+[group('develop')]
+brand:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    command -v rsvg-convert >/dev/null || { echo "missing: rsvg-convert (brew install librsvg)" >&2; exit 1; }
+    out=custom_components/paremtech_ptlevel/brand
+    for name in icon dark_icon; do
+      rsvg-convert -w 256 -h 256 -o "$out/$name.png" "assets/brand/$name.svg"
+      rsvg-convert -w 512 -h 512 -o "$out/$name@2x.png" "assets/brand/$name.svg"
+    done
+    echo "rendered $(ls "$out" | tr '\n' ' ')"
+
 # --- Releases ----------------------------------------------------------------
 
 # Step 1 of 2: run the gate and open a PR bumping the version to VERSION.

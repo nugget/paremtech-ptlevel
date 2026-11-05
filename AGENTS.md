@@ -182,6 +182,14 @@ incomplete.
   `homeassistant`, `name`, `persistent_directory`, `zip_release`. It does not
   use `info.md` or `render_readme`.
 - Keep exactly one integration under `custom_components/` for the Marketplace.
+- Brand images live in `custom_components/paremtech_ptlevel/brand/`. Home
+  Assistant reads that folder since 2026.3 and prefers it to the brands repo.
+  They are original artwork: a cistern with a level gauge, in light and
+  `dark_` variants at 256 and 512 px. Never use ParemTech's cloud mark, which
+  is the official cloud integration's tile, or Home Assistant branding. The
+  sources are `assets/brand/*.svg`; edit those and run `just brand`. There is
+  no logo, so Home Assistant falls back to the icon, as the brands spec allows
+  when the two would be the same image.
 - All runtime files required by Home Assistant belong inside
   `custom_components/paremtech_ptlevel/`.
 - Keep `manifest.json`, `hacs.json`, `README.md`, translations, and brand assets
