@@ -1,0 +1,73 @@
+{
+  "title": "ParemTech PTLevel",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Add a PTLevel receiver",
+        "description": "Enter the address of a PTLevel WiFi receiver on your network. Receivers do not announce themselves, so give each one a DHCP reservation first.",
+        "data": {
+          "host": "Host"
+        },
+        "data_description": {
+          "host": "Hostname or IP address of the receiver."
+        }
+      },
+      "reconfigure": {
+        "title": "Change the receiver's address",
+        "description": "Enter the receiver's new address. It must be the same receiver; to add a different one, add a new entry instead.",
+        "data": {
+          "host": "Host"
+        },
+        "data_description": {
+          "host": "Hostname or IP address of the receiver."
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Could not reach a PTLevel receiver at that address.",
+      "invalid_host": "Enter just a hostname or IP address, without http://, a port or a path.",
+      "unsupported_receiver": "Something answered at that address, but not a supported PTLevel receiver. Only Version 1 receivers (firmware 2xx, no button on the front) are supported so far."
+    },
+    "abort": {
+      "already_configured": "This receiver is already configured.",
+      "reconfigure_successful": "The receiver's address was updated.",
+      "wrong_device": "That address answers as a different receiver. To add it, add a new entry instead."
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "report_overdue": {
+        "name": "Report overdue"
+      }
+    },
+    "sensor": {
+      "battery_voltage": {
+        "name": "Battery voltage"
+      },
+      "failed_transmissions": {
+        "name": "Failed transmissions"
+      },
+      "last_report": {
+        "name": "Last report"
+      },
+      "raw_pressure": {
+        "name": "Raw pressure reading"
+      },
+      "transmitter_signal": {
+        "name": "Transmitter signal"
+      },
+      "transmitter_temperature": {
+        "name": "Transmitter temperature"
+      },
+      "water_column": {
+        "name": "Water column"
+      },
+      "wifi_signal": {
+        "name": "WiFi signal"
+      },
+      "zero_point": {
+        "name": "Zero point"
+      }
+    }
+  }
+}

@@ -1,0 +1,19 @@
+{
+ "free_space": "651264",
+ "rx_id": "208",
+ "tx_id": "147",
+ "tx_rssi": "",
+ "rx_rssi": "-54",
+ "firmware_version": "214",
+ "hardware_version": "4",
+ "id": "4022D8000001",
+ "ip": "192.0.2.100",
+ "subnet": "255.255.252.0",
+ "gateway": "192.0.2.1",
+ "dns": "unknown",
+ "tx_firmware_version": "",
+ "tx_hardware_version": "0",
+ "fails": "0",
+ "rx_sensors": "[]",
+ "tx_sensors": ""
+}

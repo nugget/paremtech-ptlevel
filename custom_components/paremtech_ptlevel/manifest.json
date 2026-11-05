@@ -1,0 +1,16 @@
+{
+  "domain": "paremtech_ptlevel",
+  "name": "ParemTech PTLevel",
+  "after_dependencies": [],
+  "codeowners": [
+    "@nugget"
+  ],
+  "config_flow": true,
+  "documentation": "https://github.com/nugget/paremtech-ptlevel",
+  "integration_type": "device",
+  "iot_class": "local_polling",
+  "issue_tracker": "https://github.com/nugget/paremtech-ptlevel/issues",
+  "loggers": [],
+  "requirements": [],
+  "version": "0.0.0"
+}

@@ -1,0 +1,86 @@
+[project]
+name = "paremtech-ptlevel"
+version = "0.0.0"
+description = "Home Assistant custom integration that reads ParemTech PTLevel tank-level receivers over the local network."
+readme = "README.md"
+requires-python = ">=3.14.2"
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "codespell>=2.4.0,<3.0.0",
+    "pydoclint>=0.6.0,<1.0.0",
+    "pyright>=1.1.400,<2.0.0",
+    "pytest-homeassistant-custom-component==0.13.371",
+    "ruff>=0.13.0,<1.0.0",
+    "yamllint>=1.37.0,<2.0.0",
+]
+
+[tool.ruff]
+line-length = 88
+target-version = "py314"
+
+[tool.ruff.lint]
+select = [
+    "A",
+    "ANN",
+    "ARG",
+    "B",
+    "C4",
+    "D",
+    "E",
+    "F",
+    "I",
+    "N",
+    "PERF",
+    "PIE",
+    "PL",
+    "PTH",
+    "RET",
+    "RUF",
+    "SIM",
+    "TCH",
+    "TRY",
+    "UP",
+    "W",
+]
+ignore = [
+    "ANN401",
+    "D203",
+    "D213",
+    "PLR0913",
+    "TRY003",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = [
+    "D101",
+    "PLR2004",
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.pydoclint]
+style = "google"
+exclude = '\\.git|\\.venv|__pycache__'
+allow-init-docstring = true
+check-class-attributes = false
+skip-checking-private-functions = true
+skip-checking-short-docstrings = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+python_files = ["test_homeassistant_*.py"]
+
+[tool.pyright]
+include = ["custom_components", "scripts", "tests"]
+pythonVersion = "3.14"
+typeCheckingMode = "standard"
+reportMissingImports = "none"
+reportUnknownArgumentType = "none"
+reportUnknownMemberType = "none"
+reportUnknownVariableType = "none"
+reportUnknownLambdaType = "none"
+reportIncompatibleVariableOverride = "none"
