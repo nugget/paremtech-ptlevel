@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 1098 512" width="1098" height="512">
+<g transform="translate(-30 0)">
+  <path d="M 44 60 L 44 452 A 168.0 46 0 0 0 380 452 L 380 60 A 168.0 46 0 0 0 44 60 Z" fill="#2B2B2B"/>
+  <path d="M 44 258 L 44 452 A 168.0 46 0 0 0 380 452 L 380 258 A 168.0 46 0 0 0 44 258 Z" fill="#1E88E5"/>
+  <ellipse cx="212.0" cy="258" rx="168.0" ry="46" fill="#64B5F6"/>
+  <path d="M 44 60 L 44 452 A 168.0 46 0 0 0 380 452 L 380 60 A 168.0 46 0 0 0 44 60 Z" fill="none" stroke="#E6E6E6" stroke-width="28" stroke-linejoin="round"/>
+  <path d="M 44 60 A 168.0 46 0 0 0 380 60" fill="none" stroke="#E6E6E6" stroke-width="28" stroke-linecap="round"/>
+</g>
+  <image x="408" y="159" width="690" height="194" xlink:href="dark_paremtech_mark.png" href="dark_paremtech_mark.png"/>
+</svg>
