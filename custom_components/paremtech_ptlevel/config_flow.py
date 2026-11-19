@@ -25,6 +25,7 @@ from .const import (
     CONF_MEASURED_DEPTH,
     DEPTH_OFFSET_RANGE,
     DOMAIN,
+    MIN_CALIBRATION_WATER_COLUMN,
 )
 from .ptlevel import (
     PTLevelClient,
@@ -34,6 +35,8 @@ from .ptlevel import (
 )
 
 if TYPE_CHECKING:
+    from datetime import datetime
+
     from homeassistant.config_entries import ConfigEntry, ConfigFlowResult
 
     from .coordinator import PTLevelData
@@ -59,10 +62,16 @@ def _inches(minimum: float, maximum: float) -> NumberSelector:
 
 TANK_SCHEMA = probatio.Schema(
     {
-        probatio.Required(CONF_DEPTH_OFFSET, default=0.0): _inches(*DEPTH_OFFSET_RANGE),
+        probatio.Optional(CONF_DEPTH_OFFSET): _inches(*DEPTH_OFFSET_RANGE),
         probatio.Optional(CONF_FULL_DEPTH): _inches(1.0, MAX_DEPTH),
     }
 )
+"""Both tank settings are optional, and an empty field removes its option.
+
+The depth offset deliberately has no default: an owner who opens the form
+only to set the full depth must not end up with an uncalibrated offset of
+zero, which would create a Water depth that is really the water column.
+"""
 CALIBRATE_SCHEMA = probatio.Schema(
     {probatio.Required(CONF_MEASURED_DEPTH): _inches(0.0, MAX_DEPTH)}
 )
@@ -166,6 +175,9 @@ class PTLevelOptionsFlow(OptionsFlowWithReload):
     percentage entities appear or go away with their settings.
     """
 
+    _shown_report: datetime | None = None
+    """The report the calibrate form last showed, to catch one arriving meanwhile."""
+
     async def async_step_init(
         self,
         user_input: dict[str, Any] | None = None,  # noqa: ARG002
@@ -178,12 +190,16 @@ class PTLevelOptionsFlow(OptionsFlowWithReload):
     ) -> ConfigFlowResult:
         """Edit the depth offset and the full depth.
 
-        Leaving the full depth empty removes the percentage entity.
+        An empty field removes its option. Without a depth offset there are no
+        tank entities at all, and without a full depth there is no percentage;
+        a full depth saved on its own waits for the offset.
         """
         if user_input is not None:
-            options = {CONF_DEPTH_OFFSET: round(user_input[CONF_DEPTH_OFFSET], 1)}
-            if (full_depth := user_input.get(CONF_FULL_DEPTH)) is not None:
-                options[CONF_FULL_DEPTH] = round(full_depth, 1)
+            options = {
+                key: round(value, 1)
+                for key in (CONF_DEPTH_OFFSET, CONF_FULL_DEPTH)
+                if (value := user_input.get(key)) is not None
+            }
             return self.async_create_entry(data=options)
 
         return self.async_show_form(
@@ -198,33 +214,49 @@ class PTLevelOptionsFlow(OptionsFlowWithReload):
     ) -> ConfigFlowResult:
         """Set the depth offset from a measured water depth.
 
-        The offset is the measured depth minus the current water column, so
-        the measurement has to be taken before the transmitter reports again.
-        A result outside ``DEPTH_OFFSET_RANGE`` is refused as a mistake. The
-        full depth, if set, is kept.
+        The offset is the measured depth minus the water column of the report
+        the form showed, so the owner measures right after a fresh report. If
+        another report arrives while the form is open, the submission is
+        refused with ``new_report`` and the form shows the new reading rather
+        than silently using a value the owner never saw. A result outside
+        ``DEPTH_OFFSET_RANGE`` is refused as a mistake. The full depth, if set,
+        is kept.
 
-        The step aborts with ``no_reading`` until a report has been seen, and
-        with ``unverified_scale`` for transmitter hardware whose pressure
-        scale is unverified: that has no water column at all, so waiting for
-        another report would not help.
+        The step aborts, each with its own explanation, when the entry is not
+        loaded (``not_loaded``), before any report (``no_reading``), for
+        transmitter hardware without a verified scale (``unverified_scale``),
+        and when the water column is under ``MIN_CALIBRATION_WATER_COLUMN``
+        (``low_reading``), which looks the same as a chamber out of the water
+        or a leaking air tube.
         """
         data = self._loaded_data()
-        if data is None or data.reading is None or data.last_report is None:
+        if data is None:
+            return self.async_abort(reason="not_loaded")
+        if data.reading is None or data.last_report is None:
             return self.async_abort(reason="no_reading")
         if (water_column := data.reading.water_column_inches) is None:
             return self.async_abort(reason="unverified_scale")
+        if water_column < MIN_CALIBRATION_WATER_COLUMN:
+            return self.async_abort(
+                reason="low_reading",
+                description_placeholders={"water_column": f"{water_column:.1f}"},
+            )
         reported = data.last_report
 
         errors: dict[str, str] = {}
         if user_input is not None:
             offset = round(user_input[CONF_MEASURED_DEPTH] - water_column, 1)
             low, high = DEPTH_OFFSET_RANGE
-            if low <= offset <= high:
+            if reported != self._shown_report:
+                errors["base"] = "new_report"
+            elif low <= offset <= high:
                 return self.async_create_entry(
                     data={**self.config_entry.options, CONF_DEPTH_OFFSET: offset}
                 )
-            errors[CONF_MEASURED_DEPTH] = "implausible_depth"
+            else:
+                errors[CONF_MEASURED_DEPTH] = "implausible_depth"
 
+        self._shown_report = reported
         return self.async_show_form(
             step_id="calibrate",
             data_schema=CALIBRATE_SCHEMA,

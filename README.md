@@ -61,7 +61,7 @@ changes, use **Reconfigure** on the entry.
 | --- | --- |
 | Water column | Inches of water above the chamber's trapped air, from the last report. Transmitter hardware 16 only. |
 | Water depth | *Once the tank is calibrated.* Inches of water from the tank floor: the water column plus the depth offset. |
-| Percent full | *Once a full depth is set.* The water depth as a percentage of the full depth. Can read over 100%. |
+| Percent full | *Once the tank is calibrated and a full depth is set.* The water depth as a percentage of the full depth. Can read over 100%. |
 | Transmitter status | *Awaiting first report*, *Reporting* or *Overdue*: where the transmitter stands. |
 | Last report | When this integration first saw the current report. |
 | Report overdue | Problem sensor: on when no new report has arrived for 13 hours. |
@@ -96,19 +96,33 @@ not the tank level on its own:
 Water depth and percent full come from two settings per receiver, under
 **Configure** on its entry:
 
-1. **Calibrate from a measured depth.** Measure the water from the tank floor
-   to the surface, then enter it before the transmitter reports again (press
-   its button for a fresh report first if you like). The integration stores the
-   difference from the current water column as the **depth offset**, which is
-   usually about 4–8 inches. **Water depth** appears.
+1. **Calibrate from a measured depth.** Press the transmitter's button for a
+   fresh report, then straight away measure the water from the tank floor to
+   the surface, while no water is being drawn or pumped in. The level can move
+   by up to about 10% without the transmitter reporting, so measure against a
+   fresh report rather than an old one. Open **Calibrate**, check that the
+   report time it shows is the one from just before you measured, and enter
+   the depth. The integration stores the difference from that report's water
+   column as the **depth offset**, which is usually about 4–8 inches, and
+   **Water depth** appears. If the transmitter reports again while the form is
+   open, it asks you to check the new reading instead of quietly using it.
 2. **Tank settings.** Set the **full depth**: the water depth that counts as
    100%. Where a fill pump stops at a set level, use that level; otherwise use
-   the overflow. **Percent full** appears. Clear the full depth to remove it.
+   the overflow. **Percent full** appears. Clear the full depth to remove only
+   the percentage, or clear the depth offset to remove both tank sensors.
 
 You can also type a known depth offset in **Tank settings** instead of
 calibrating. Both values are in inches. Like the water column, tank level
 needs transmitter hardware 16; for other hardware, calibration explains that it
-is unavailable. Tank volume is still to come.
+is unavailable. Calibration also refuses a water column under 1 inch, which
+looks the same as a chamber out of the water or a leaking air tube.
+
+The chamber cannot sense water below its own air pocket. Once the water drops
+to the chamber, the water column reads about zero, so **Water depth** stops at
+the depth offset and **Percent full** at the offset's share of the full depth
+(about 5% for a 5-inch offset in a 100-inch tank), never 0%. An air leak looks
+the same. Set any "tank empty" alert above that floor. Tank volume is still to
+come.
 
 ### How freshness works
 

@@ -91,7 +91,7 @@
     "step": {
       "init": {
         "title": "Tank level",
-        "description": "The water column is measured from the chamber's air pocket, a few inches above the tank floor. Calibrate against a measured depth to get the tank's water depth, then set the full depth to get a percentage.",
+        "description": "The water column is measured from the chamber's air pocket, a few inches above the tank floor. Calibrate against a measured depth to get the tank's water depth, then set the full depth in Tank settings to get a percentage.",
         "menu_options": {
           "calibrate": "Calibrate from a measured depth",
           "tank": "Tank settings"
@@ -99,7 +99,7 @@
       },
       "calibrate": {
         "title": "Calibrate from a measured depth",
-        "description": "The latest report, seen {reported}, shows {water_column} in of water above the chamber. Measure the water from the tank floor to the surface before the transmitter reports again, and enter it here. The difference becomes the depth offset.",
+        "description": "The latest report, seen {reported}, shows {water_column} in of water above the chamber. For an accurate offset, press the transmitter's button for a fresh report, then measure the water from the tank floor to the surface straight away, while no water is being drawn or pumped in. Check that the report time here is the one from just before you measured, then enter the depth. The difference from the water column becomes the depth offset.",
         "data": {
           "measured_depth": "Measured water depth"
         },
@@ -109,7 +109,7 @@
       },
       "tank": {
         "title": "Tank settings",
-        "description": "Water depth is the water column plus the depth offset. Percent full is the water depth as a share of the full depth. Leave the full depth empty for no percentage.",
+        "description": "Water depth is the water column plus the depth offset, and Percent full is the water depth as a share of the full depth. Both need a depth offset: clear it to remove them, and clear the full depth to remove only the percentage. The chamber cannot sense water below its own air pocket, so the lowest reading means at or below the chamber.",
         "data": {
           "depth_offset": "Depth offset",
           "full_depth": "Full depth"
@@ -121,10 +121,13 @@
       }
     },
     "error": {
-      "implausible_depth": "That measurement is too far from the reading to be right. Check the measurement, and that the transmitter has reported since the chamber went in."
+      "implausible_depth": "That measurement is too far from the reading to be right. Check the measurement, and that the transmitter has reported since the chamber went in.",
+      "new_report": "The transmitter reported again while this form was open. Check the new reading above, and enter a depth measured against it."
     },
     "abort": {
+      "low_reading": "The latest report shows only {water_column} in of water above the chamber, which looks the same as a chamber out of the water or a leaking air tube. Check the chamber and its tube, then calibrate after the next report shows water above it.",
       "no_reading": "There is no water column to calibrate against yet. Wait for the transmitter to report, or press its button, then try again.",
+      "not_loaded": "The receiver is not connected right now, so there is no current reading to calibrate against. Try again once Home Assistant can reach it.",
       "unverified_scale": "This transmitter's hardware has no verified pressure scale, so there is no water column to calibrate against. Water depth and percent full need transmitter hardware 16."
     }
   }
