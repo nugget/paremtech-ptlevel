@@ -37,6 +37,7 @@ from .ptlevel import (
 from .units import displayed, format_length, inches_to_field, length_unit, to_inches
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from datetime import datetime
 
     from homeassistant.config_entries import ConfigEntry, ConfigFlowResult
@@ -207,6 +208,15 @@ class PTLevelOptionsFlow(OptionsFlowWithReload):
     _pending: _Calibration | None = None
     """A calibration computed from a new report, waiting for confirmation."""
 
+    _prefilled: dict[str, float] | None = None
+    """The tank form's prefilled values, in the owner's unit, by setting.
+
+    A submitted value equal to its prefill was left untouched, so the stored
+    value is kept as it is instead of being converted back from the rounded
+    prefill, which would quietly change a calibrated offset (4.7719 in is
+    prefilled as 4.77).
+    """
+
     _shown_system: UnitSystem | None = None
     """The unit system the last form was shown in.
 
@@ -231,23 +241,25 @@ class PTLevelOptionsFlow(OptionsFlowWithReload):
         stores them in inches. An empty field removes its option. Without a
         depth offset there are no tank entities at all, and without a full
         depth there is no percentage; a full depth saved on its own waits for
-        the offset.
+        the offset. A setting submitted unchanged from its prefill keeps its
+        stored value exactly.
         """
         unit = length_unit(self._unit_system(user_input))
+        saved = self.config_entry.options
         if user_input is not None:
             options = {
-                key: to_inches(value, unit)
+                key: self._kept_or(key, value, lambda v: to_inches(v, unit))
                 for key in TANK_LENGTH_RANGES
                 if (value := user_input.get(key)) is not None
             }
             return self.async_create_entry(data=options)
 
-        saved = self.config_entry.options
         suggested = {
             key: inches_to_field(saved[key], unit)
             for key in TANK_LENGTH_RANGES
             if key in saved
         }
+        self._prefilled = suggested
         return self.async_show_form(
             step_id="tank",
             data_schema=self.add_suggested_values_to_schema(
@@ -398,6 +410,18 @@ class PTLevelOptionsFlow(OptionsFlowWithReload):
         return self.async_create_entry(
             data={**self.config_entry.options, CONF_DEPTH_OFFSET: pending.offset}
         )
+
+    def _kept_or(
+        self, key: str, value: float, convert: Callable[[float], float]
+    ) -> float:
+        """Return the stored ``key`` if ``value`` is its untouched prefill.
+
+        Otherwise convert ``value`` from the owner's unit for storage.
+        """
+        saved = self.config_entry.options
+        if key in saved and self._prefilled and self._prefilled.get(key) == value:
+            return saved[key]
+        return convert(value)
 
     def _unit_system(self, user_input: dict[str, Any] | None) -> UnitSystem:
         """Return the unit system to show a form in, or to read a submission in.

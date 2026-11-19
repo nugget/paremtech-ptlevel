@@ -645,3 +645,28 @@ async def test_unit_system_change_while_a_form_is_open(
     assert placeholders.get("unit") == "mm"
     result = await _submit(hass, result, SAVE)
     assert entry.options == {CONF_DEPTH_OFFSET: 4.8349}
+
+
+@pytest.mark.parametrize(
+    ("system", "prefill", "new_full_depth"),
+    [
+        (US_CUSTOMARY_SYSTEM, 4.77, 100.0),
+        (METRIC_SYSTEM, 121.21, 2540.0),
+    ],
+)
+async def test_untouched_offset_keeps_its_precision(
+    hass: HomeAssistant, system: UnitSystem, prefill: float, new_full_depth: float
+) -> None:
+    """Changing only the full depth leaves a calibrated offset exactly as it was."""
+    entry = await _setup(
+        hass, {CONF_DEPTH_OFFSET: 4.7719, CONF_FULL_DEPTH: 104.5}, system
+    )
+
+    result = await _open(hass, entry, "tank")
+    assert _suggested(result)[CONF_DEPTH_OFFSET] == prefill
+    await _submit(
+        hass, result, {CONF_DEPTH_OFFSET: prefill, CONF_FULL_DEPTH: new_full_depth}
+    )
+
+    assert entry.options[CONF_DEPTH_OFFSET] == 4.7719
+    assert entry.options[CONF_FULL_DEPTH] == 100.0
