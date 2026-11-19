@@ -254,8 +254,8 @@ async def test_calibrate_uses_the_report_sent_after_opening(
     result = await _submit(hass, result, SAVE)
 
     assert result.get("type") is FlowResultType.CREATE_ENTRY
-    assert entry.options == {CONF_DEPTH_OFFSET: 4.8, CONF_FULL_DEPTH: 104.5}
-    assert _state(hass, "water_depth") == "96.03"
+    assert entry.options == {CONF_DEPTH_OFFSET: 4.7719, CONF_FULL_DEPTH: 104.5}
+    assert _state(hass, "water_depth") == "96.0"
     assert _state(hass, "percent_full") == "91.9"
 
 
@@ -296,7 +296,7 @@ async def test_calibrate_refuses_an_implausible_depth(
     assert result.get("step_id") == "calibrate_confirm"
     result = await _submit(hass, result, SAVE)
     assert result.get("type") is FlowResultType.CREATE_ENTRY
-    assert entry.options == {CONF_DEPTH_OFFSET: 3.8}
+    assert entry.options == {CONF_DEPTH_OFFSET: 3.8099}
 
 
 @pytest.mark.parametrize(
@@ -433,7 +433,7 @@ async def test_calibrate_can_correct_the_depth_without_a_new_press(
     assert (result.get("description_placeholders") or {}).get("offset") == "8.8"
     result = await _submit(hass, result, SAVE)
     assert result.get("type") is FlowResultType.CREATE_ENTRY
-    assert entry.options == {CONF_DEPTH_OFFSET: 8.8}
+    assert entry.options == {CONF_DEPTH_OFFSET: 8.8099}
 
 
 async def test_clearing_settings_offline_still_removes_tank_sensors(
@@ -497,15 +497,14 @@ def _field(result: Any, key: str) -> dict[str, Any]:
     [
         (
             US_CUSTOMARY_SYSTEM,
-            {"unit": "in", "bounds": (-24.0, 60.0), "step": 0.1, "saved": (5.2, 104.5)},
+            {"unit": "in", "bounds": (-24.0, 60.0), "saved": (5.2, 104.5)},
         ),
         (
             METRIC_SYSTEM,
             {
                 "unit": "mm",
-                "bounds": (-609.0, 1524.0),
-                "step": 1.0,
-                "saved": (132.0, 2654.0),
+                "bounds": (-609.6, 1524.0),
+                "saved": (132.08, 2654.3),
             },
         ),
     ],
@@ -521,7 +520,7 @@ async def test_tank_form_uses_the_unit_system(
     offset = _field(result, CONF_DEPTH_OFFSET)
     assert offset["unit_of_measurement"] == expected["unit"]
     assert (offset["min"], offset["max"]) == expected["bounds"]
-    assert offset["step"] == expected["step"]
+    assert offset["step"] == "any"
     assert _field(result, CONF_FULL_DEPTH)["unit_of_measurement"] == expected["unit"]
     assert _suggested(result) == dict(
         zip((CONF_DEPTH_OFFSET, CONF_FULL_DEPTH), expected["saved"], strict=True)
@@ -611,14 +610,14 @@ async def test_low_reading_cutoff_in_millimetres(
 async def test_tank_form_saves_unchanged_at_the_range_edges(
     hass: HomeAssistant,
 ) -> None:
-    """Values at the edges of their ranges prefill inside the metric bounds."""
+    """Values at the edges of their ranges prefill exactly at the metric bounds."""
     entry = await _setup(
         hass, {CONF_DEPTH_OFFSET: -24.0, CONF_FULL_DEPTH: 1.0}, METRIC_SYSTEM
     )
 
     result = await _open(hass, entry, "tank")
     prefilled = _suggested(result)
-    assert prefilled == {CONF_DEPTH_OFFSET: -609.0, CONF_FULL_DEPTH: 26.0}
+    assert prefilled == {CONF_DEPTH_OFFSET: -609.6, CONF_FULL_DEPTH: 25.4}
 
     result = await _submit(hass, result, prefilled)
 
