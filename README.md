@@ -4,9 +4,10 @@ A Home Assistant custom integration that reads [ParemTech PTLevel](https://parem
 tank-level monitors straight from their WiFi receivers on your network. It needs
 no ParemTech account, no API token and no internet connection.
 
-> **Status: early development.** The first slice reads Version 1 receivers and
-> reports the measured water column, battery, signal and report freshness. Tank
-> level and volume, Version 2 receivers, and repair issues are still to come.
+> **Status: early development.** It reads Version 1 receivers and reports the
+> measured water column, the calibrated water depth and percent full, battery,
+> signal and report freshness. Tank volume, Version 2 receivers, and repair
+> issues are still to come.
 
 ## How a PTLevel works
 
@@ -59,6 +60,8 @@ changes, use **Reconfigure** on the entry.
 | Entity | Notes |
 | --- | --- |
 | Water column | Inches of water above the chamber's trapped air, from the last report. Transmitter hardware 16 only. |
+| Water depth | *Once the tank is calibrated.* Inches of water from the tank floor: the water column plus the depth offset. |
+| Percent full | *Once a full depth is set.* The water depth as a percentage of the full depth. Can read over 100%. |
 | Transmitter status | *Awaiting first report*, *Reporting* or *Overdue*: where the transmitter stands. |
 | Last report | When this integration first saw the current report. |
 | Report overdue | Problem sensor: on when no new report has arrived for 13 hours. |
@@ -75,15 +78,35 @@ changes, use **Reconfigure** on the entry.
 
 The water column is the physical measurement: gauge pressure above the zero
 point, at 100 counts per hectopascal and 2.4909 hPa per inch of water. It is
-not yet the tank level:
+not the tank level on its own:
 
 - The chamber's air pocket sits a few inches above the tank floor, so the water
-  column reads slightly less than the depth of water in the tank.
+  column reads slightly less than the depth of water in the tank. Calibrating
+  the tank (below) accounts for that.
 - It reads a little below zero when there is no pressure at all, with the
   chamber out of the water or the air tube leaking.
 - The counts-per-inch scale comes from ParemTech's published pressure formula
-  and has been checked against a one-foot dip. Check it against a measured
-  depth before you rely on it.
+  and has been checked against a one-foot dip. ParemTech's own app converts at
+  254 counts per inch instead, so it shows about 2% less water than this
+  integration's water column. Calibrating against a measured depth absorbs
+  most of that difference near the level you calibrate at.
+
+### Tank level
+
+Water depth and percent full come from two settings per receiver, under
+**Configure** on its entry:
+
+1. **Calibrate from a measured depth.** Measure the water from the tank floor
+   to the surface, then enter it before the transmitter reports again (press
+   its button for a fresh report first if you like). The integration stores the
+   difference from the current water column as the **depth offset**, which is
+   usually about 4–8 inches. **Water depth** appears.
+2. **Tank settings.** Set the **full depth**: the water depth that counts as
+   100%. Where a fill pump stops at a set level, use that level; otherwise use
+   the overflow. **Percent full** appears. Clear the full depth to remove it.
+
+You can also type a known depth offset in **Tank settings** instead of
+calibrating. Both values are in inches. Tank volume is still to come.
 
 ### How freshness works
 

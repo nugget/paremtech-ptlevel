@@ -1,0 +1,12 @@
+{
+  "entity": {
+    "sensor": {
+      "percent_full": {
+        "default": "mdi:water-percent"
+      },
+      "water_depth": {
+        "default": "mdi:waves-arrow-up"
+      }
+    }
+  }
+}

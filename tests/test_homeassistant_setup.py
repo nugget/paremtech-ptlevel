@@ -362,6 +362,7 @@ async def test_diagnostics(
 
     assert diagnostics["entry"] == {
         "data": {CONF_HOST: "192.0.2.100"},
+        "options": {},
         "unique_id": RECEIVER_ID,
     }
     assert diagnostics["status"]["receiver_id"] == RECEIVER_ID

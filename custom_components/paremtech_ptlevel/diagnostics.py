@@ -36,7 +36,11 @@ async def async_get_config_entry_diagnostics(
     data = coordinator.data
     payload = coordinator.client.last_payload
     return {
-        "entry": {"data": dict(entry.data), "unique_id": entry.unique_id},
+        "entry": {
+            "data": dict(entry.data),
+            "options": dict(entry.options),
+            "unique_id": entry.unique_id,
+        },
         "last_update_success": coordinator.last_update_success,
         "status": asdict(data.status) if data else None,
         "last_reading": asdict(data.reading) if data and data.reading else None,

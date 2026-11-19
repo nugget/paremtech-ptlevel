@@ -53,6 +53,9 @@
       "paired_transmitter": {
         "name": "Paired transmitter ID"
       },
+      "percent_full": {
+        "name": "Percent full"
+      },
       "raw_pressure": {
         "name": "Raw pressure reading"
       },
@@ -73,12 +76,55 @@
       "water_column": {
         "name": "Water column"
       },
+      "water_depth": {
+        "name": "Water depth"
+      },
       "wifi_signal": {
         "name": "WiFi signal"
       },
       "zero_point": {
         "name": "Zero point"
       }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Tank level",
+        "description": "The water column is measured from the chamber's air pocket, a few inches above the tank floor. Calibrate against a measured depth to get the tank's water depth, then set the full depth to get a percentage.",
+        "menu_options": {
+          "calibrate": "Calibrate from a measured depth",
+          "tank": "Tank settings"
+        }
+      },
+      "calibrate": {
+        "title": "Calibrate from a measured depth",
+        "description": "The latest report, seen {reported}, shows {water_column} in of water above the chamber. Measure the water from the tank floor to the surface before the transmitter reports again, and enter it here. The difference becomes the depth offset.",
+        "data": {
+          "measured_depth": "Measured water depth"
+        },
+        "data_description": {
+          "measured_depth": "Inches of water from the tank floor to the surface."
+        }
+      },
+      "tank": {
+        "title": "Tank settings",
+        "description": "Water depth is the water column plus the depth offset. Percent full is the water depth as a share of the full depth. Leave the full depth empty for no percentage.",
+        "data": {
+          "depth_offset": "Depth offset",
+          "full_depth": "Full depth"
+        },
+        "data_description": {
+          "depth_offset": "Inches to add to the water column to get the water depth, about the height of the chamber's air pocket above the floor. Calibrating sets it for you.",
+          "full_depth": "Water depth, in inches, that counts as 100%. Use the level where the fill pump stops, or the overflow if nothing stops the fill."
+        }
+      }
+    },
+    "error": {
+      "implausible_depth": "That measurement is too far from the reading to be right. Check the measurement, and that the transmitter has reported since the chamber went in."
+    },
+    "abort": {
+      "no_reading": "There is no water column to calibrate against yet. Wait for the transmitter to report, or press its button, then try again."
     }
   }
 }

@@ -8,7 +8,10 @@ from pathlib import Path
 from custom_components.paremtech_ptlevel.binary_sensor import (
     BINARY_SENSOR_DESCRIPTIONS,
 )
-from custom_components.paremtech_ptlevel.sensor import SENSOR_DESCRIPTIONS
+from custom_components.paremtech_ptlevel.sensor import (
+    SENSOR_DESCRIPTIONS,
+    TANK_SENSOR_DESCRIPTIONS,
+)
 
 INTEGRATION = (
     Path(__file__).resolve().parents[1] / "custom_components/paremtech_ptlevel"
@@ -47,7 +50,7 @@ def test_every_entity_has_a_translated_name() -> None:
     """Each description's translation key has a name in strings.json."""
     entity = _strings()["entity"]
     for platform, descriptions in (
-        ("sensor", SENSOR_DESCRIPTIONS),
+        ("sensor", SENSOR_DESCRIPTIONS + TANK_SENSOR_DESCRIPTIONS),
         ("binary_sensor", BINARY_SENSOR_DESCRIPTIONS),
     ):
         names = {key: value["name"] for key, value in entity[platform].items()}
@@ -63,3 +66,13 @@ def test_every_enum_state_is_translated() -> None:
             continue
         states = sensors[description.translation_key]["state"]
         assert set(description.options) == set(states), description.key
+
+
+def test_every_icon_belongs_to_a_sensor() -> None:
+    """Each icon in icons.json is for a translation key that exists."""
+    icons = json.loads(INTEGRATION.joinpath("icons.json").read_text(encoding="utf-8"))
+    keys = {
+        description.translation_key
+        for description in SENSOR_DESCRIPTIONS + TANK_SENSOR_DESCRIPTIONS
+    }
+    assert set(icons["entity"]["sensor"]) <= keys

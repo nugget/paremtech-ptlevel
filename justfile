@@ -141,6 +141,7 @@ spellcheck:
 json:
     uv run python -m json.tool {{ manifest }} > /dev/null
     uv run python -m json.tool custom_components/paremtech_ptlevel/strings.json > /dev/null
+    uv run python -m json.tool custom_components/paremtech_ptlevel/icons.json > /dev/null
     uv run python -m json.tool custom_components/paremtech_ptlevel/translations/en.json > /dev/null
     uv run python -m json.tool hacs.json > /dev/null
 
