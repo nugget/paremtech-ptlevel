@@ -104,7 +104,7 @@
           "measured_depth": "Measured water depth"
         },
         "data_description": {
-          "measured_depth": "Water from the tank floor to the surface, in {unit}."
+          "measured_depth": "Water from the tank floor to the surface ({unit})."
         }
       },
       "calibrate_confirm": {
@@ -117,7 +117,7 @@
       },
       "tank": {
         "title": "Tank settings",
-        "description": "Water depth is the water column plus the depth offset, and Percent full is the water depth as a share of the full depth. Both need a depth offset: clear it to remove them, and clear the full depth to remove only the percentage. The chamber cannot sense water below its own air pocket, so the lowest reading means at or below the chamber. Lengths are in {unit}, the unit Home Assistant uses for your unit system.",
+        "description": "Water depth is the water column plus the depth offset, and Percent full is the water depth as a share of the full depth. Both need a depth offset: clear it to remove them, and clear the full depth to remove only the percentage. The chamber cannot sense water below its own air pocket, so the lowest reading means at or below the chamber. Lengths use {unit}, the unit Home Assistant uses for your unit system.",
         "data": {
           "depth_offset": "Depth offset",
           "full_depth": "Full depth"

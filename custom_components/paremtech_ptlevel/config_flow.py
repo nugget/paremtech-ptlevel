@@ -49,8 +49,15 @@ _LOGGER = logging.getLogger(__name__)
 MAX_DEPTH = 600.0
 """Deepest water depth the forms accept, in inches (50 ft)."""
 
-TANK_LENGTH_OPTIONS = (CONF_DEPTH_OFFSET, CONF_FULL_DEPTH)
-"""Tank settings that are lengths, stored in inches and shown in the owner's unit."""
+TANK_RANGES: dict[str, tuple[float, float]] = {
+    CONF_DEPTH_OFFSET: DEPTH_OFFSET_RANGE,
+    CONF_FULL_DEPTH: (1.0, MAX_DEPTH),
+}
+"""Each tank setting's accepted range, in the stored unit (inches).
+
+The form's field bounds and the clamping of its prefilled values both come
+from here, so they cannot drift apart.
+"""
 
 
 def _unit_field(units: FormUnit, low: float, high: float) -> NumberSelector:
@@ -80,12 +87,21 @@ def _tank_schema(units: FormUnit) -> probatio.Schema:
     """
     return probatio.Schema(
         {
-            probatio.Optional(CONF_DEPTH_OFFSET): _unit_field(
-                units, *DEPTH_OFFSET_RANGE
-            ),
-            probatio.Optional(CONF_FULL_DEPTH): _unit_field(units, 1.0, MAX_DEPTH),
+            probatio.Optional(key): _unit_field(units, *TANK_RANGES[key])
+            for key in TANK_RANGES
         }
     )
+
+
+def _prefill(units: FormUnit, value: float, valid: tuple[float, float]) -> float:
+    """Return a saved value as the form prefills it, inside the field's bounds.
+
+    Rounding to the shown unit can move a value at the very edge of its range
+    one step outside the field's bounds, which are rounded inward; the form
+    would then refuse to save unchanged. Clamping moves it at most one step.
+    """
+    low, high = units.bounds(*valid)
+    return min(max(units.from_stored(value), low), high)
 
 
 def _calibrate_schema(units: FormUnit) -> probatio.Schema:
@@ -227,15 +243,15 @@ class PTLevelOptionsFlow(OptionsFlowWithReload):
         if user_input is not None:
             options = {
                 key: units.to_stored(value)
-                for key in TANK_LENGTH_OPTIONS
+                for key in TANK_RANGES
                 if (value := user_input.get(key)) is not None
             }
             return self.async_create_entry(data=options)
 
         saved = self.config_entry.options
         suggested = {
-            key: units.from_stored(saved[key])
-            for key in TANK_LENGTH_OPTIONS
+            key: _prefill(units, saved[key], TANK_RANGES[key])
+            for key in TANK_RANGES
             if key in saved
         }
         return self.async_show_form(
