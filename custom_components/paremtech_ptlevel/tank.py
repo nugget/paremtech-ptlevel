@@ -60,7 +60,7 @@ class TankSettings:
 
         The answer is ``None`` until a depth offset is saved, by calibrating or
         in Tank settings, and again once it is cleared, so an uncalibrated
-        tank grows no depth or percentage entities. A full depth saved on its
+        tank grows no tank entities. A full depth saved on its
         own waits for the offset.
         """
         if CONF_DEPTH_OFFSET not in options:

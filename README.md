@@ -63,7 +63,7 @@ changes, use **Reconfigure** on the entry.
 | Water depth | *Once the tank is calibrated.* Inches of water from the tank floor: the water column plus the depth offset. |
 | Percent full | *Once the tank is calibrated and a full depth is set.* The water depth as a percentage of the full depth. Can read over 100%. |
 | Water volume | *Once the tank is calibrated and a full depth and capacity are set.* The capacity scaled by the water depth, in litres or US gallons. |
-| Tank capacity | *Diagnostic, once a capacity is set.* The capacity at full depth, as a volume you can use in templates. |
+| Tank capacity | *Diagnostic, once the tank is calibrated and a capacity is set.* The capacity at full depth, as a volume you can use in templates. |
 | Transmitter status | *Awaiting first report*, *Reporting* or *Overdue*: where the transmitter stands. |
 | Last report | When this integration first saw the current report. |
 | Report overdue | Problem sensor: on when no new report has arrived for 13 hours. |

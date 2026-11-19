@@ -6,11 +6,13 @@ they stay available across receiver restarts; their age is what the
 Receiver values (WiFi and LoRa signal, failed transmissions) come from the
 latest poll and go unavailable when the receiver does not report them.
 
-Water depth and percent full are derived from the water column and the tank
-settings in the entry's options (see ``tank.py``). They exist only once those
-settings are saved. A tank sensor whose setting is removed is removed from the
-entity registry by entry setup (``__init__.py``) rather than left behind as
-unavailable, even while the receiver is unreachable.
+The tank sensors (water depth, percent full, water volume and tank capacity)
+come from the tank settings in the entry's options (see ``tank.py``): the
+first three from the water column and those settings, tank capacity from the
+settings alone. They exist only once those settings are saved. A tank
+sensor whose setting is removed is removed from the entity registry by entry
+setup (``__init__.py``) rather than left behind as unavailable, even while
+the receiver is unreachable.
 """
 
 from __future__ import annotations

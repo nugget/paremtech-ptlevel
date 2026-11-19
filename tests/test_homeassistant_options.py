@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from conftest import load_payload
 from homeassistant.config_entries import ConfigEntryState
-from homeassistant.const import CONF_HOST
+from homeassistant.const import CONF_HOST, STATE_UNAVAILABLE
 from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.helpers import entity_registry as er
 from homeassistant.util.unit_system import (
@@ -231,7 +231,10 @@ async def test_calibrate_uses_the_report_sent_after_opening(
     recognized by its reading, not its time.
     """
     freezer.move_to(START)
-    entry = await _setup(hass, {CONF_DEPTH_OFFSET: 0.0, CONF_FULL_DEPTH: 104.5})
+    entry = await _setup(
+        hass,
+        {CONF_DEPTH_OFFSET: 0.0, CONF_FULL_DEPTH: 104.5, CONF_CAPACITY: 5000.0},
+    )
 
     result = await _open(hass, entry, "calibrate")
     assert result.get("type") is FlowResultType.FORM
@@ -253,12 +256,20 @@ async def test_calibrate_uses_the_report_sent_after_opening(
     assert placeholders.get("water_column") == "91.2"
     assert placeholders.get("measured_depth") == "96.0"
     assert placeholders.get("offset") == "4.8"
-    assert entry.options == {CONF_DEPTH_OFFSET: 0.0, CONF_FULL_DEPTH: 104.5}
+    assert entry.options == {
+        CONF_DEPTH_OFFSET: 0.0,
+        CONF_FULL_DEPTH: 104.5,
+        CONF_CAPACITY: 5000.0,
+    }
 
     result = await _submit(hass, result, SAVE)
 
     assert result.get("type") is FlowResultType.CREATE_ENTRY
-    assert entry.options == {CONF_DEPTH_OFFSET: 4.8, CONF_FULL_DEPTH: 104.5}
+    assert entry.options == {
+        CONF_DEPTH_OFFSET: 4.8,
+        CONF_FULL_DEPTH: 104.5,
+        CONF_CAPACITY: 5000.0,
+    }
     assert _state(hass, "water_depth") == "96.03"
     assert _state(hass, "percent_full") == "91.9"
 
@@ -620,35 +631,57 @@ async def test_low_reading_cutoff_in_millimetres(
 
 
 @pytest.mark.parametrize(
-    ("system", "unit", "volume", "capacity"),
+    ("system", "unit", "states"),
     [
-        (US_CUSTOMARY_SYSTEM, "gal", 4851.2, 5000.0),
-        (METRIC_SYSTEM, "L", 18363.8, 18927.1),
+        (US_CUSTOMARY_SYSTEM, "gal", ("4851.2", "5000.0")),
+        (METRIC_SYSTEM, "L", ("18363.8", "18927.1")),
     ],
 )
 async def test_volume_sensors_use_the_unit_system(
-    hass: HomeAssistant,
-    system: UnitSystem,
-    unit: str,
-    volume: float,
-    capacity: float,
+    hass: HomeAssistant, system: UnitSystem, unit: str, states: tuple[str, str]
 ) -> None:
-    """Water volume and tank capacity report in litres or US gallons."""
+    """Volumes report natively in the unit system's unit, rounded, unconverted.
+
+    The exact states show the integration rounded in that unit, and the lack
+    of a suggested display unit shows Home Assistant had nothing to convert.
+    """
     await _setup(
         hass,
         {CONF_DEPTH_OFFSET: 5.2, CONF_FULL_DEPTH: 104.5, CONF_CAPACITY: 5000.0},
         system,
     )
 
-    for key, expected in (("water_volume", volume), ("tank_capacity", capacity)):
-        state = hass.states.get(f"sensor.wellsw_tw_{key}")
+    registry = er.async_get(hass)
+    for key, expected in zip(("water_volume", "tank_capacity"), states, strict=True):
+        entity_id = f"sensor.wellsw_tw_{key}"
+        state = hass.states.get(entity_id)
         assert state is not None, key
-        assert float(state.state) == pytest.approx(expected, abs=0.05), key
+        assert state.state == expected, key
         assert state.attributes["unit_of_measurement"] == unit
         assert state.attributes["device_class"] == "volume_storage"
+        registry_entry = registry.async_get(entity_id)
+        assert registry_entry is not None
+        assert "sensor.private" not in registry_entry.options, key
     volume_state = hass.states.get("sensor.wellsw_tw_water_volume")
+    capacity_state = hass.states.get("sensor.wellsw_tw_tank_capacity")
     assert volume_state is not None
+    assert capacity_state is not None
     assert volume_state.attributes["state_class"] == "measurement"
+    assert "state_class" not in capacity_state.attributes
+
+
+async def test_tank_capacity_without_a_water_column(
+    hass: HomeAssistant, receiver: FakeReceiver
+) -> None:
+    """Older transmitter hardware has no water column, but capacity still shows."""
+    receiver.payload = dict(load_payload("config_reading"), tx_hardware_version="5")
+    await _setup(
+        hass, {CONF_DEPTH_OFFSET: 5.2, CONF_FULL_DEPTH: 104.5, CONF_CAPACITY: 5000.0}
+    )
+
+    assert _state(hass, "tank_capacity") == "5000.0"
+    for key in ("water_depth", "percent_full", "water_volume"):
+        assert _state(hass, key) == STATE_UNAVAILABLE, key
 
 
 async def test_capacity_without_full_depth_gives_only_tank_capacity(

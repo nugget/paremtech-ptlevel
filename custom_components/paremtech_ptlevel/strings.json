@@ -97,7 +97,7 @@
     "step": {
       "init": {
         "title": "Tank level",
-        "description": "The water column is measured from the chamber's air pocket, a few inches above the tank floor. Calibrate against a measured depth to get the tank's water depth, then set the full depth in Tank settings to get a percentage.",
+        "description": "The water column is measured from the chamber's air pocket, a few inches above the tank floor. Calibrate against a measured depth to get the tank's water depth, then in Tank settings set the full depth to get a percentage, and a capacity to get the water volume.",
         "menu_options": {
           "calibrate": "Calibrate from a measured depth",
           "tank": "Tank settings"
@@ -145,7 +145,7 @@
     "abort": {
       "no_reading": "There is no report to start from yet. Press the transmitter's button and wait a minute for the report to reach the receiver, then open Calibrate again and follow its steps; you will press the button once more after the form opens.",
       "not_loaded": "The receiver is not connected right now, so there is no current reading to calibrate against. Once Home Assistant can reach it, open Calibrate again; you will need to press the transmitter's button after the form opens.",
-      "unverified_scale": "This transmitter's hardware has no verified pressure scale, so there is no water column to calibrate against. Water depth and percent full need transmitter hardware 16."
+      "unverified_scale": "This transmitter's hardware has no verified pressure scale, so there is no water column to calibrate against. Water depth, percent full and water volume need transmitter hardware 16."
     }
   }
 }

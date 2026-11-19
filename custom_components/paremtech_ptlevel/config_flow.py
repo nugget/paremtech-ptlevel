@@ -147,7 +147,7 @@ class PTLevelConfigFlow(  # pyright: ignore[reportGeneralTypeIssues]
     @staticmethod
     @callback
     def async_get_options_flow(config_entry: ConfigEntry) -> PTLevelOptionsFlow:  # noqa: ARG004
-        """Return the flow that sets up the tank's depth and fill level."""
+        """Return the flow that sets up the tank settings and calibration."""
         return PTLevelOptionsFlow()
 
     async def async_step_user(
@@ -220,13 +220,13 @@ class PTLevelConfigFlow(  # pyright: ignore[reportGeneralTypeIssues]
 
 
 class PTLevelOptionsFlow(OptionsFlowWithReload):
-    """Set up the tank's water depth and fill level.
+    """Set up the tank's water depth, fill level and volume.
 
-    Both routes write the same two options. *Calibrate* derives the depth
-    offset from a water depth measured by hand against the current reading,
-    which is how an owner normally finds it; *tank settings* edits the offset
-    and the full depth directly. Saving reloads the entry, so the depth and
-    percentage entities appear or go away with their settings.
+    *Calibrate* sets only the depth offset, derived from a water depth
+    measured by hand against a fresh report, which is how an owner normally
+    finds it. *Tank settings* edits the depth offset, the full depth and the
+    capacity directly. Saving reloads the entry, so the tank sensors appear or
+    go away with their settings.
     """
 
     _baseline: tuple[datetime, TransmitterReading] | None = None
@@ -314,7 +314,7 @@ class PTLevelOptionsFlow(OptionsFlowWithReload):
         The step aborts when the entry is not loaded or the receiver does not
         answer when the form first opens (``not_loaded``), before any report
         (``no_reading``), and for transmitter hardware without a verified scale
-        (``unverified_scale``). The full depth, if set, is kept.
+        (``unverified_scale``). The other tank settings are kept.
         """
         units = length_unit(self.hass.config.units)
         read = await self._read_receiver()
@@ -419,7 +419,7 @@ class PTLevelOptionsFlow(OptionsFlowWithReload):
         self,
         user_input: dict[str, Any] | None = None,  # noqa: ARG002
     ) -> ConfigFlowResult:
-        """Save the confirmed depth offset, keeping the full depth."""
+        """Save the confirmed depth offset, keeping the other tank settings."""
         if (pending := self._pending) is None:
             return await self.async_step_calibrate()
         return self.async_create_entry(
