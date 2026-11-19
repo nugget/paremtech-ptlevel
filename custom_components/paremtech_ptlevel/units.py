@@ -4,8 +4,8 @@ Home Assistant converts sensor values for display by itself, but nothing
 converts what an owner types into a form: a number field's unit is only a
 label. So the forms pick a unit from the Home Assistant unit system and
 convert at the edges, while the options always store one unit per quantity
-(inches for lengths). Existing settings therefore need no migration, and the
-unit system can change at any time.
+(inches for lengths, US gallons for volumes). Existing settings therefore
+need no migration, and the unit system can change at any time.
 """
 
 from __future__ import annotations
@@ -14,8 +14,12 @@ import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from homeassistant.const import UnitOfLength
-from homeassistant.util.unit_conversion import BaseUnitConverter, DistanceConverter
+from homeassistant.const import UnitOfLength, UnitOfVolume
+from homeassistant.util.unit_conversion import (
+    BaseUnitConverter,
+    DistanceConverter,
+    VolumeConverter,
+)
 from homeassistant.util.unit_system import US_CUSTOMARY_SYSTEM
 
 if TYPE_CHECKING:
@@ -92,3 +96,16 @@ def length_unit(system: UnitSystem) -> FormUnit:
     distances (miles or kilometres).
     """
     return INCHES if system is US_CUSTOMARY_SYSTEM else MILLIMETERS
+
+
+GALLONS = FormUnit(UnitOfVolume.GALLONS, 0, UnitOfVolume.GALLONS, VolumeConverter, 1)
+LITERS = FormUnit(UnitOfVolume.LITERS, 0, UnitOfVolume.GALLONS, VolumeConverter, 4)
+
+
+def volume_unit(system: UnitSystem) -> FormUnit:
+    """Return the volume unit the forms use for a Home Assistant unit system.
+
+    US gallons where the unit system uses gallons, and litres otherwise.
+    Volumes are stored in US gallons; Home Assistant has no imperial gallon.
+    """
+    return GALLONS if system.volume_unit == UnitOfVolume.GALLONS else LITERS

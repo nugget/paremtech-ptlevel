@@ -32,6 +32,9 @@ CONF_DEPTH_OFFSET = "depth_offset"
 CONF_FULL_DEPTH = "full_depth"
 """Option: the tank's water depth, in inches, when it counts as 100% full."""
 
+CONF_CAPACITY = "capacity"
+"""Option: how much the tank holds at its full depth, in US gallons."""
+
 CONF_MEASURED_DEPTH = "measured_depth"
 """Calibration input: the water depth the owner just measured, in inches."""
 

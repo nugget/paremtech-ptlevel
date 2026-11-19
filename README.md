@@ -5,8 +5,8 @@ tank-level monitors straight from their WiFi receivers on your network. It needs
 no ParemTech account, no API token and no internet connection.
 
 > **Status: early development.** It reads Version 1 receivers and reports the
-> measured water column, the calibrated water depth and percent full, battery,
-> signal and report freshness. Tank volume, Version 2 receivers, and repair
+> measured water column, the calibrated water depth, percent full and water
+> volume, battery, signal and report freshness. Version 2 receivers and repair
 > issues are still to come.
 
 ## How a PTLevel works
@@ -62,6 +62,8 @@ changes, use **Reconfigure** on the entry.
 | Water column | Inches of water above the chamber's trapped air, from the last report. Transmitter hardware 16 only. |
 | Water depth | *Once the tank is calibrated.* Inches of water from the tank floor: the water column plus the depth offset. |
 | Percent full | *Once the tank is calibrated and a full depth is set.* The water depth as a percentage of the full depth. Can read over 100%. |
+| Water volume | *Once the tank is calibrated and a full depth and capacity are set.* The capacity scaled by the water depth, in litres or US gallons. |
+| Tank capacity | *Diagnostic, once a capacity is set.* The capacity at full depth, as a volume you can use in templates. |
 | Transmitter status | *Awaiting first report*, *Reporting* or *Overdue*: where the transmitter stands. |
 | Last report | When this integration first saw the current report. |
 | Report overdue | Problem sensor: on when no new report has arrived for 13 hours. |
@@ -93,8 +95,8 @@ not the tank level on its own:
 
 ### Tank level
 
-Water depth and percent full come from two settings per receiver, under
-**Configure** on its entry:
+Water depth, percent full and water volume come from settings per receiver,
+under **Configure** on its entry:
 
 1. **Calibrate from a measured depth.** At the tank, with your phone, open
    **Calibrate** first. Then press the transmitter's button and watch its
@@ -106,18 +108,29 @@ Water depth and percent full come from two settings per receiver, under
    reports. If that report has not reached the receiver yet, it asks you to
    press the button again, keeping the depth you typed. It then shows that
    report, your depth and the resulting **depth offset** (usually about 4–8
-   inches, 100–200 mm): save it, or go back and correct the depth without pressing the
-   button again. Once saved, **Water depth** appears. If the receiver does not
+   inches, 100–200 mm): save it, or go back and correct the depth without
+   pressing the button again. Once saved, **Water depth** appears. If the receiver does not
    answer when the form opens, calibration stops rather than using an old
    reading; if it misses a read later on, the form asks you to submit again
    and your button press still counts.
 2. **Tank settings.** Set the **full depth**: the water depth that counts as
    100%. Where a fill pump stops at a set level, use that level; otherwise use
-   the overflow. **Percent full** appears. Clear the full depth to remove only
-   the percentage, or clear the depth offset to remove both tank sensors.
+   the overflow. **Percent full** appears.
+3. **Capacity at full depth**, also in **Tank settings**: how much the tank
+   holds with the water at the full depth. **Water volume** and **Tank
+   capacity** appear. A nameplate capacity is often measured to the brim, so
+   treat it as a starting point and adjust the capacity until Water volume
+   looks right. Volume is the capacity scaled by the water depth, which suits
+   upright cylinders and box-shaped tanks; horizontal cylinders are not
+   modelled.
 
-The forms use the units of your Home Assistant unit system: inches on US
-customary, millimetres on metric. You can also type a known depth offset in
+Clear the full depth or the capacity to remove only what depends on it, or
+clear the depth offset to remove every tank sensor. To total a pair of tanks,
+use Home Assistant's **Group** helper (sensor group, type *Sum*), which
+converts units; the *Combine the state of several sensors* helper does not.
+
+The forms use the units of your Home Assistant unit system: inches and US
+gallons on US customary, millimetres and litres on metric. You can also type a known depth offset in
 **Tank settings** instead of calibrating. Like the water column, tank level
 needs transmitter hardware 16; for other hardware, calibration explains that it
 is unavailable. Calibration also refuses a new report whose water column shows
@@ -134,10 +147,10 @@ display precision there if you prefer whole millimetres.
 
 The chamber cannot sense water below its own air pocket. Once the water drops
 to the chamber, the water column reads about zero, so **Water depth** stops at
-the depth offset and **Percent full** at the offset's share of the full depth
-(about 5% for a 5-inch offset in a 100-inch tank), never 0%. An air leak looks
-the same. Set any "tank empty" alert above that floor. Tank volume is still to
-come.
+the depth offset, **Percent full** at the offset's share of the full depth
+(about 5% for a 5-inch offset in a 100-inch tank) and **Water volume** at the
+same share of the capacity, never 0. An air leak looks the same. Set any "tank
+empty" alert above that floor.
 
 ### How freshness works
 

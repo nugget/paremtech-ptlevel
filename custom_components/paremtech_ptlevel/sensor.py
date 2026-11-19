@@ -31,12 +31,21 @@ from homeassistant.const import (
     UnitOfElectricPotential,
     UnitOfLength,
     UnitOfTemperature,
+    UnitOfVolume,
 )
 from homeassistant.util import dt as dt_util
 
 from .coordinator import TRANSMITTER_STATUSES
 from .entity import PTLevelEntity
-from .tank import PERCENT_FULL, WATER_DEPTH, TankSettings, tank_sensor_keys
+from .tank import (
+    PERCENT_FULL,
+    TANK_CAPACITY,
+    WATER_DEPTH,
+    WATER_VOLUME,
+    TankSettings,
+    tank_sensor_keys,
+)
+from .units import volume_unit
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -47,6 +56,7 @@ if TYPE_CHECKING:
 
     from . import PTLevelConfigEntry
     from .coordinator import PTLevelCoordinator, PTLevelData
+    from .units import FormUnit
 
 type SensorValue = float | int | str | datetime | None
 
@@ -162,17 +172,34 @@ class PTLevelTankSensorEntityDescription(SensorEntityDescription):
     """Describe a sensor computed from the water column and the tank settings.
 
     ``value_fn`` receives the tank settings and the current water column in
-    inches. Which settings a sensor needs is decided by its key, in
+    inches, or ``None`` when there is none; it returns ``None`` when the value
+    is unknown. A ``volume`` sensor's value is in US gallons, and the entity
+    reports it in the unit system's volume unit instead (see ``units.py``).
+    Which settings a sensor needs is decided by its key, in
     ``tank.tank_sensor_keys``.
     """
 
-    value_fn: Callable[[TankSettings, float], float | None]
+    value_fn: Callable[[TankSettings, float | None], float | None]
+    volume: bool = False
 
 
-def _percent_full(tank: TankSettings, water_column: float) -> float | None:
-    """Return the fill level to one decimal, or ``None`` without a full depth."""
-    percent = tank.percent_full(water_column)
-    return None if percent is None else round(percent, 1)
+def _water_depth(tank: TankSettings, water_column: float | None) -> float | None:
+    """Return the water depth to two decimals, or ``None`` without a water column."""
+    if water_column is None:
+        return None
+    return round(tank.water_depth(water_column), 2)
+
+
+def _percent_full(tank: TankSettings, water_column: float | None) -> float | None:
+    """Return the fill level to one decimal, or ``None`` when it is unknown."""
+    if water_column is None or (percent := tank.percent_full(water_column)) is None:
+        return None
+    return round(percent, 1)
+
+
+def _water_volume(tank: TankSettings, water_column: float | None) -> float | None:
+    """Return the water volume in US gallons, or ``None`` when it is unknown."""
+    return None if water_column is None else tank.water_volume(water_column)
 
 
 TANK_SENSOR_DESCRIPTIONS: tuple[PTLevelTankSensorEntityDescription, ...] = (
@@ -183,7 +210,7 @@ TANK_SENSOR_DESCRIPTIONS: tuple[PTLevelTankSensorEntityDescription, ...] = (
         device_class=SensorDeviceClass.DISTANCE,
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=1,
-        value_fn=lambda tank, water_column: round(tank.water_depth(water_column), 2),
+        value_fn=_water_depth,
     ),
     PTLevelTankSensorEntityDescription(
         key=PERCENT_FULL,
@@ -192,6 +219,24 @@ TANK_SENSOR_DESCRIPTIONS: tuple[PTLevelTankSensorEntityDescription, ...] = (
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=0,
         value_fn=_percent_full,
+    ),
+    PTLevelTankSensorEntityDescription(
+        key=WATER_VOLUME,
+        translation_key=WATER_VOLUME,
+        device_class=SensorDeviceClass.VOLUME_STORAGE,
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=0,
+        value_fn=_water_volume,
+        volume=True,
+    ),
+    PTLevelTankSensorEntityDescription(
+        key=TANK_CAPACITY,
+        translation_key=TANK_CAPACITY,
+        device_class=SensorDeviceClass.VOLUME_STORAGE,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        suggested_display_precision=0,
+        value_fn=lambda tank, _water_column: tank.capacity,
+        volume=True,
     ),
 )
 
@@ -241,7 +286,10 @@ class PTLevelTankSensorEntity(PTLevelEntity, SensorEntity):
     """A tank-level sensor, derived from the water column and tank settings.
 
     The settings are fixed for the entity's life: changing them reloads the
-    entry, which builds new entities.
+    entry, which builds new entities. Volume sensors take their native unit
+    from the unit system when they are built (litres or US gallons), so the
+    state is a clean number in the unit most owners see; Home Assistant still
+    converts it for any other display unit an owner picks.
     """
 
     entity_description: PTLevelTankSensorEntityDescription
@@ -255,16 +303,26 @@ class PTLevelTankSensorEntity(PTLevelEntity, SensorEntity):
         """Initialize a sensor for ``description`` on a tank set up as ``tank``."""
         super().__init__(coordinator, description)
         self._tank = tank
+        self._volume_unit: FormUnit | None = None
+        if description.volume:
+            self._volume_unit = volume_unit(coordinator.hass.config.units)
+            self._attr_native_unit_of_measurement = self._volume_unit.unit
 
     @property
     def available(self) -> bool:
-        """Return whether the receiver answered and there is a water column."""
+        """Return whether the receiver answered and the value is known."""
         return super().available and self.native_value is not None
 
     @property
     def native_value(self) -> float | None:
-        """Return the sensor value, or ``None`` without a water column."""
+        """Return the sensor value, or ``None`` when it is unknown."""
         water_column = _water_column(self.coordinator.data)
-        if water_column is None:
-            return None
-        return self.entity_description.value_fn(self._tank, water_column)
+        value = self.entity_description.value_fn(self._tank, water_column)
+        if value is None or self._volume_unit is None:
+            return value
+        return round(
+            self._volume_unit.converter.convert(
+                value, UnitOfVolume.GALLONS, self._volume_unit.unit
+            ),
+            1,
+        )

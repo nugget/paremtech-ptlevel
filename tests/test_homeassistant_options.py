@@ -23,6 +23,7 @@ from pytest_homeassistant_custom_component.common import (
 )
 
 from custom_components.paremtech_ptlevel.const import (
+    CONF_CAPACITY,
     CONF_DEPTH_OFFSET,
     CONF_FULL_DEPTH,
     CONF_MEASURED_DEPTH,
@@ -189,11 +190,14 @@ async def test_full_depth_alone_waits_for_an_offset(hass: HomeAssistant) -> None
 @pytest.mark.parametrize(
     ("options", "expected"),
     [
-        ({}, {CONF_DEPTH_OFFSET: None, CONF_FULL_DEPTH: None}),
-        ({CONF_FULL_DEPTH: 104.5}, {CONF_DEPTH_OFFSET: None, CONF_FULL_DEPTH: 104.5}),
+        ({}, {CONF_DEPTH_OFFSET: None, CONF_FULL_DEPTH: None, CONF_CAPACITY: None}),
         (
-            {CONF_DEPTH_OFFSET: 5.2, CONF_FULL_DEPTH: 104.5},
-            {CONF_DEPTH_OFFSET: 5.2, CONF_FULL_DEPTH: 104.5},
+            {CONF_FULL_DEPTH: 104.5},
+            {CONF_DEPTH_OFFSET: None, CONF_FULL_DEPTH: 104.5, CONF_CAPACITY: None},
+        ),
+        (
+            {CONF_DEPTH_OFFSET: 5.2, CONF_FULL_DEPTH: 104.5, CONF_CAPACITY: 5000.0},
+            {CONF_DEPTH_OFFSET: 5.2, CONF_FULL_DEPTH: 104.5, CONF_CAPACITY: 5000.0},
         ),
     ],
 )
@@ -523,9 +527,12 @@ async def test_tank_form_uses_the_unit_system(
     assert (offset["min"], offset["max"]) == expected["bounds"]
     assert offset["step"] == expected["step"]
     assert _field(result, CONF_FULL_DEPTH)["unit_of_measurement"] == expected["unit"]
-    assert _suggested(result) == dict(
-        zip((CONF_DEPTH_OFFSET, CONF_FULL_DEPTH), expected["saved"], strict=True)
-    )
+    assert _suggested(result) == {
+        **dict(
+            zip((CONF_DEPTH_OFFSET, CONF_FULL_DEPTH), expected["saved"], strict=True)
+        ),
+        CONF_CAPACITY: None,
+    }
     placeholders = result.get("description_placeholders") or {}
     assert placeholders.get("unit") == expected["unit"]
 
@@ -546,7 +553,11 @@ async def test_tank_settings_in_millimetres_are_stored_in_inches(
     assert float(depth) == pytest.approx(101.39 * 25.4)
 
     result = await _open(hass, entry, "tank")
-    assert _suggested(result) == {CONF_DEPTH_OFFSET: 132.0, CONF_FULL_DEPTH: 2654.0}
+    assert _suggested(result) == {
+        CONF_DEPTH_OFFSET: 132.0,
+        CONF_FULL_DEPTH: 2654.0,
+        CONF_CAPACITY: None,
+    }
 
 
 async def test_calibrate_in_millimetres(
@@ -606,3 +617,86 @@ async def test_low_reading_cutoff_in_millimetres(
         assert result.get("step_id") == "calibrate_confirm"
     else:
         assert result.get("errors") == {"base": outcome}
+
+
+@pytest.mark.parametrize(
+    ("system", "unit", "volume", "capacity"),
+    [
+        (US_CUSTOMARY_SYSTEM, "gal", 4851.2, 5000.0),
+        (METRIC_SYSTEM, "L", 18363.8, 18927.1),
+    ],
+)
+async def test_volume_sensors_use_the_unit_system(
+    hass: HomeAssistant,
+    system: UnitSystem,
+    unit: str,
+    volume: float,
+    capacity: float,
+) -> None:
+    """Water volume and tank capacity report in litres or US gallons."""
+    await _setup(
+        hass,
+        {CONF_DEPTH_OFFSET: 5.2, CONF_FULL_DEPTH: 104.5, CONF_CAPACITY: 5000.0},
+        system,
+    )
+
+    for key, expected in (("water_volume", volume), ("tank_capacity", capacity)):
+        state = hass.states.get(f"sensor.wellsw_tw_{key}")
+        assert state is not None, key
+        assert float(state.state) == pytest.approx(expected, abs=0.05), key
+        assert state.attributes["unit_of_measurement"] == unit
+        assert state.attributes["device_class"] == "volume_storage"
+    volume_state = hass.states.get("sensor.wellsw_tw_water_volume")
+    assert volume_state is not None
+    assert volume_state.attributes["state_class"] == "measurement"
+
+
+async def test_capacity_without_full_depth_gives_only_tank_capacity(
+    hass: HomeAssistant,
+) -> None:
+    """Volume needs a full depth; capacity alone shows just the capacity."""
+    await _setup(hass, {CONF_DEPTH_OFFSET: 5.2, CONF_CAPACITY: 5000.0})
+
+    assert _state(hass, "tank_capacity") == "5000.0"
+    assert _state(hass, "water_volume") is None
+
+
+async def test_clearing_capacity_removes_the_volume_sensors(
+    hass: HomeAssistant,
+) -> None:
+    """Emptying the capacity removes both volume sensors and keeps the rest."""
+    entry = await _setup(
+        hass, {CONF_DEPTH_OFFSET: 5.2, CONF_FULL_DEPTH: 104.5, CONF_CAPACITY: 5000.0}
+    )
+    assert _registered(hass, "water_volume")
+
+    result = await _open(hass, entry, "tank")
+    assert _suggested(result)[CONF_CAPACITY] == 5000.0
+    assert _field(result, CONF_CAPACITY)["unit_of_measurement"] == "gal"
+    await _submit(hass, result, {CONF_DEPTH_OFFSET: 5.2, CONF_FULL_DEPTH: 104.5})
+
+    assert entry.options == {CONF_DEPTH_OFFSET: 5.2, CONF_FULL_DEPTH: 104.5}
+    assert not _registered(hass, "water_volume")
+    assert not _registered(hass, "tank_capacity")
+    assert _state(hass, "percent_full") == "97.0"
+
+
+async def test_capacity_in_litres_is_stored_in_gallons(hass: HomeAssistant) -> None:
+    """A metric owner types litres; the options keep US gallons."""
+    entry = await _setup(
+        hass, {CONF_DEPTH_OFFSET: 5.2, CONF_FULL_DEPTH: 104.5}, METRIC_SYSTEM
+    )
+
+    result = await _open(hass, entry, "tank")
+    assert _field(result, CONF_CAPACITY)["unit_of_measurement"] == "L"
+    placeholders = result.get("description_placeholders") or {}
+    assert placeholders.get("volume_unit") == "L"
+    await _submit(
+        hass,
+        result,
+        {CONF_DEPTH_OFFSET: 132.0, CONF_FULL_DEPTH: 2654.0, CONF_CAPACITY: 18927.0},
+    )
+
+    assert entry.options[CONF_CAPACITY] == 4999.9844
+    result = await _open(hass, entry, "tank")
+    assert _suggested(result)[CONF_CAPACITY] == 18927.0

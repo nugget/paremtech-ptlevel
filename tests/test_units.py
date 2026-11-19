@@ -7,9 +7,12 @@ import unittest
 from homeassistant.util.unit_system import METRIC_SYSTEM, US_CUSTOMARY_SYSTEM
 
 from custom_components.paremtech_ptlevel.units import (
+    GALLONS,
     INCHES,
+    LITERS,
     MILLIMETERS,
     length_unit,
+    volume_unit,
 )
 
 
@@ -64,6 +67,32 @@ class FormUnitTest(unittest.TestCase):
         """A tenth of an inch, or a whole millimetre."""
         self.assertEqual(INCHES.step, 0.1)
         self.assertEqual(MILLIMETERS.step, 1.0)
+
+
+class VolumeUnitTest(unittest.TestCase):
+    """Converting between the shown volume unit and stored US gallons."""
+
+    def test_unit_follows_the_unit_system(self) -> None:
+        """Gallons where the unit system uses them; litres otherwise."""
+        self.assertIs(volume_unit(US_CUSTOMARY_SYSTEM), GALLONS)
+        self.assertIs(volume_unit(METRIC_SYSTEM), LITERS)
+
+    def test_round_trips(self) -> None:
+        """A typed capacity is stored in gallons and reads back as typed."""
+        cases = [
+            (GALLONS, 5000, 5000.0, "5000"),
+            (LITERS, 18927, 4999.9844, "18927"),
+        ]
+        for unit, typed, stored, text in cases:
+            with self.subTest(unit=unit.unit, typed=typed):
+                self.assertEqual(unit.to_stored(typed), stored)
+                self.assertEqual(unit.from_stored(stored), float(typed))
+                self.assertEqual(unit.format(stored), text)
+
+    def test_bounds(self) -> None:
+        """Capacity bounds in gallons convert to whole litres, rounded inward."""
+        self.assertEqual(GALLONS.bounds(1.0, 1_000_000.0), (1.0, 1_000_000.0))
+        self.assertEqual(LITERS.bounds(1.0, 1_000_000.0), (4.0, 3_785_411.0))
 
 
 if __name__ == "__main__":

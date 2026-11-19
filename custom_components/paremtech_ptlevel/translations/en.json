@@ -59,6 +59,9 @@
       "raw_pressure": {
         "name": "Raw pressure reading"
       },
+      "tank_capacity": {
+        "name": "Tank capacity"
+      },
       "transmitter_signal": {
         "name": "Transmitter signal"
       },
@@ -78,6 +81,9 @@
       },
       "water_depth": {
         "name": "Water depth"
+      },
+      "water_volume": {
+        "name": "Water volume"
       },
       "wifi_signal": {
         "name": "WiFi signal"
@@ -117,14 +123,16 @@
       },
       "tank": {
         "title": "Tank settings",
-        "description": "Water depth is the water column plus the depth offset, and Percent full is the water depth as a share of the full depth. Both need a depth offset: clear it to remove them, and clear the full depth to remove only the percentage. The chamber cannot sense water below its own air pocket, so the lowest reading means at or below the chamber. Lengths are in {unit}, the unit Home Assistant uses for your unit system.",
+        "description": "Water depth is the water column plus the depth offset, and Percent full is the water depth as a share of the full depth. With a capacity as well, Water volume is that capacity scaled by the water depth, which suits any tank with straight vertical walls. Every tank sensor needs a depth offset: clear it to remove them all, or clear the full depth or capacity to remove only what depends on it. The chamber cannot sense water below its own air pocket, so the lowest reading means at or below the chamber. Lengths are in {unit} and volumes in {volume_unit}, the units Home Assistant uses for your unit system.",
         "data": {
           "depth_offset": "Depth offset",
-          "full_depth": "Full depth"
+          "full_depth": "Full depth",
+          "capacity": "Capacity at full depth"
         },
         "data_description": {
           "depth_offset": "How much to add to the water column to get the water depth: about the height of the chamber's air pocket above the floor. Calibrating sets it for you.",
-          "full_depth": "Water depth that counts as 100%. Use the level where the fill pump stops, or the overflow if nothing stops the fill."
+          "full_depth": "Water depth that counts as 100%. Use the level where the fill pump stops, or the overflow if nothing stops the fill.",
+          "capacity": "How much the tank holds when the water is at the full depth. A nameplate capacity is often measured to the brim, so start from your best estimate and adjust it until Water volume looks right."
         }
       }
     },

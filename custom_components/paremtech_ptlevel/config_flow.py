@@ -21,6 +21,7 @@ from homeassistant.util import dt as dt_util
 from yarl import URL
 
 from .const import (
+    CONF_CAPACITY,
     CONF_DEPTH_OFFSET,
     CONF_FULL_DEPTH,
     CONF_MEASURED_DEPTH,
@@ -34,12 +35,13 @@ from .ptlevel import (
     PTLevelUnsupportedError,
     ReceiverStatus,
 )
-from .units import FormUnit, length_unit
+from .units import FormUnit, length_unit, volume_unit
 
 if TYPE_CHECKING:
     from datetime import datetime
 
     from homeassistant.config_entries import ConfigEntry, ConfigFlowResult
+    from homeassistant.util.unit_system import UnitSystem
 
     from .coordinator import PTLevelCoordinator, PTLevelData
     from .ptlevel import TransmitterReading
@@ -49,8 +51,22 @@ _LOGGER = logging.getLogger(__name__)
 MAX_DEPTH = 600.0
 """Deepest water depth the forms accept, in inches (50 ft)."""
 
-TANK_LENGTH_OPTIONS = (CONF_DEPTH_OFFSET, CONF_FULL_DEPTH)
-"""Tank settings that are lengths, stored in inches and shown in the owner's unit."""
+MAX_CAPACITY = 1_000_000.0
+"""Largest tank capacity the forms accept, in US gallons."""
+
+
+def _tank_units(system: UnitSystem) -> dict[str, FormUnit]:
+    """Return the unit each tank setting is shown in for a unit system.
+
+    Lengths are stored in inches and the capacity in US gallons (see
+    ``units.py``).
+    """
+    length = length_unit(system)
+    return {
+        CONF_DEPTH_OFFSET: length,
+        CONF_FULL_DEPTH: length,
+        CONF_CAPACITY: volume_unit(system),
+    }
 
 
 def _unit_field(units: FormUnit, low: float, high: float) -> NumberSelector:
@@ -70,10 +86,10 @@ def _unit_field(units: FormUnit, low: float, high: float) -> NumberSelector:
     )
 
 
-def _tank_schema(units: FormUnit) -> probatio.Schema:
-    """Return the tank settings form, in the owner's length unit.
+def _tank_schema(units: dict[str, FormUnit]) -> probatio.Schema:
+    """Return the tank settings form, in the owner's units.
 
-    Both settings are optional, and an empty field removes its option. The
+    Every setting is optional, and an empty field removes its option. The
     depth offset deliberately has no default: an owner who opens the form
     only to set the full depth must not end up with an uncalibrated offset of
     zero, which would create a Water depth that is really the water column.
@@ -81,9 +97,14 @@ def _tank_schema(units: FormUnit) -> probatio.Schema:
     return probatio.Schema(
         {
             probatio.Optional(CONF_DEPTH_OFFSET): _unit_field(
-                units, *DEPTH_OFFSET_RANGE
+                units[CONF_DEPTH_OFFSET], *DEPTH_OFFSET_RANGE
             ),
-            probatio.Optional(CONF_FULL_DEPTH): _unit_field(units, 1.0, MAX_DEPTH),
+            probatio.Optional(CONF_FULL_DEPTH): _unit_field(
+                units[CONF_FULL_DEPTH], 1.0, MAX_DEPTH
+            ),
+            probatio.Optional(CONF_CAPACITY): _unit_field(
+                units[CONF_CAPACITY], 1.0, MAX_CAPACITY
+            ),
         }
     )
 
@@ -215,27 +236,27 @@ class PTLevelOptionsFlow(OptionsFlowWithReload):
     async def async_step_tank(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Edit the depth offset and the full depth.
+        """Edit the depth offset, the full depth and the capacity.
 
-        The form shows lengths in the owner's unit (see ``units.py``) and
-        stores them in inches. An empty field removes its option. Without a
-        depth offset there are no tank entities at all, and without a full
-        depth there is no percentage; a full depth saved on its own waits for
-        the offset.
+        The form shows each setting in the owner's unit (see ``units.py``) and
+        stores it in inches or US gallons. An empty field removes its option.
+        Without a depth offset there are no tank entities at all; a full depth
+        adds the percentage, a capacity adds the tank capacity, and both add
+        the water volume. Settings saved without an offset wait for one.
         """
-        units = length_unit(self.hass.config.units)
+        units = _tank_units(self.hass.config.units)
         if user_input is not None:
             options = {
-                key: units.to_stored(value)
-                for key in TANK_LENGTH_OPTIONS
+                key: unit.to_stored(value)
+                for key, unit in units.items()
                 if (value := user_input.get(key)) is not None
             }
             return self.async_create_entry(data=options)
 
         saved = self.config_entry.options
         suggested = {
-            key: units.from_stored(saved[key])
-            for key in TANK_LENGTH_OPTIONS
+            key: unit.from_stored(saved[key])
+            for key, unit in units.items()
             if key in saved
         }
         return self.async_show_form(
@@ -243,7 +264,10 @@ class PTLevelOptionsFlow(OptionsFlowWithReload):
             data_schema=self.add_suggested_values_to_schema(
                 _tank_schema(units), suggested
             ),
-            description_placeholders={"unit": units.unit},
+            description_placeholders={
+                "unit": units[CONF_DEPTH_OFFSET].unit,
+                "volume_unit": units[CONF_CAPACITY].unit,
+            },
         )
 
     async def async_step_calibrate(
