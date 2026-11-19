@@ -5,12 +5,15 @@ from __future__ import annotations
 import unittest
 
 from custom_components.paremtech_ptlevel.const import (
+    CONF_CAPACITY,
     CONF_DEPTH_OFFSET,
     CONF_FULL_DEPTH,
 )
 from custom_components.paremtech_ptlevel.tank import (
     PERCENT_FULL,
+    TANK_CAPACITY,
     WATER_DEPTH,
+    WATER_VOLUME,
     TankSettings,
     tank_sensor_keys,
 )
@@ -29,6 +32,15 @@ class TankSettingsFromOptionsTest(unittest.TestCase):
                 {CONF_DEPTH_OFFSET: 5.2, CONF_FULL_DEPTH: 104.5},
                 {WATER_DEPTH, PERCENT_FULL},
             ),
+            ({CONF_CAPACITY: 5000}, set()),
+            (
+                {CONF_DEPTH_OFFSET: 5.2, CONF_CAPACITY: 5000},
+                {WATER_DEPTH, TANK_CAPACITY},
+            ),
+            (
+                {CONF_DEPTH_OFFSET: 5.2, CONF_FULL_DEPTH: 104.5, CONF_CAPACITY: 5000},
+                {WATER_DEPTH, PERCENT_FULL, WATER_VOLUME, TANK_CAPACITY},
+            ),
         ]
         for options, expected in cases:
             with self.subTest(options=options):
@@ -44,6 +56,10 @@ class TankSettingsFromOptionsTest(unittest.TestCase):
             (
                 {CONF_DEPTH_OFFSET: -1.5, CONF_FULL_DEPTH: 104.5},
                 TankSettings(-1.5, 104.5),
+            ),
+            (
+                {CONF_DEPTH_OFFSET: 5.2, CONF_FULL_DEPTH: 104.5, CONF_CAPACITY: 5000},
+                TankSettings(5.2, 104.5, 5000.0),
             ),
         ]
         for options, expected in cases:
@@ -83,6 +99,29 @@ class TankLevelTest(unittest.TestCase):
                 else:
                     assert percent is not None
                     self.assertAlmostEqual(percent, expected)
+
+
+class TankVolumeTest(unittest.TestCase):
+    """Water volume from a water column and a capacity at full depth."""
+
+    def test_water_volume(self) -> None:
+        """Volume is the capacity scaled by depth over full depth, floored at 0."""
+        cases = [
+            (TankSettings(5.2, 104.5, 5000.0), 99.3, 5000.0),
+            (TankSettings(5.2, 104.5, 5000.0), 47.05, 2500.0),
+            (TankSettings(5.2, 104.5, 5000.0), 109.75, 5500.0),
+            (TankSettings(-1.0, 100.0, 1000.0), 0.0, 0.0),
+            (TankSettings(5.2, None, 5000.0), 99.3, None),
+            (TankSettings(5.2, 104.5, None), 99.3, None),
+        ]
+        for tank, water_column, expected in cases:
+            with self.subTest(tank=tank, water_column=water_column):
+                volume = tank.water_volume(water_column)
+                if expected is None:
+                    self.assertIsNone(volume)
+                else:
+                    assert volume is not None
+                    self.assertAlmostEqual(volume, expected)
 
 
 if __name__ == "__main__":

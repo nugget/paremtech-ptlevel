@@ -4,8 +4,14 @@
       "percent_full": {
         "default": "mdi:water-percent"
       },
+      "tank_capacity": {
+        "default": "mdi:storage-tank"
+      },
       "water_depth": {
         "default": "mdi:waves-arrow-up"
+      },
+      "water_volume": {
+        "default": "mdi:water"
       }
     }
   }
