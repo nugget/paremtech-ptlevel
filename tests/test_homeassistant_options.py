@@ -779,3 +779,16 @@ async def test_unit_system_change_while_a_form_is_open(
     assert placeholders.get("unit") == "mm"
     result = await _submit(hass, result, SAVE)
     assert entry.options == {CONF_DEPTH_OFFSET: 4.8349}
+
+
+async def test_capacity_is_read_in_the_units_its_form_showed(
+    hass: HomeAssistant,
+) -> None:
+    """A capacity typed in litres stays litres if the unit system changes."""
+    entry = await _setup(hass, {CONF_DEPTH_OFFSET: 5.2}, METRIC_SYSTEM)
+
+    result = await _open(hass, entry, "tank")
+    hass.config.units = US_CUSTOMARY_SYSTEM
+    await _submit(hass, result, {CONF_DEPTH_OFFSET: 132.0, CONF_CAPACITY: 18927.0})
+
+    assert entry.options == {CONF_DEPTH_OFFSET: 5.1969, CONF_CAPACITY: 4999.9844}
