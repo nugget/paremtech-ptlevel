@@ -231,14 +231,13 @@ incomplete.
   setup failure for every user on that release. `just ha-upgrade` moves the
   test harness forward; decide in the same PR whether the `hacs.json`
   `homeassistant` minimum moves too.
-- Every release gets a narrative GitHub release-note pass after the automated
-  release is created. Do not leave GitHub's generated "What's Changed" list as
-  the final release copy. Start the body with exactly one top-level `#` heading
-  that describes the scope and spirit of the release instead of repeating the
-  tag. Let that heading set the tone; this is prose, and a little personality is
-  better than anodyne metadata. Explain the release theme and user impact, group
-  related changes into readable sections, and keep PR links or the full
-  changelog as supporting detail.
+- After publishing, replace the generated GitHub release notes with a short,
+  descriptive `###` heading and a concise summary written for the Marketplace
+  and HACS update dialogs, where people read them while deciding whether to
+  update. Use an inverted pyramid: lead with the main user impact and any
+  required upgrade action (an update needs a Home Assistant restart), then add
+  compatibility details and other context in order of importance. End with a
+  full changelog link for readers who want the implementation details.
 - Do not hardcode release-only behavior in integration source; keep version and
   packaging metadata in manifest/release automation.
 - Unreleased code carries version `0.0.0`, and only `just release-prepare` ever

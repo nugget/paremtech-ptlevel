@@ -22,7 +22,8 @@
 #   (get the PR reviewed and merged)
 #   just release-publish 0.2.1   tag the release commit, create the GitHub Release
 #
-# Then replace the generated GitHub release notes with a written summary.
+# Then replace the generated GitHub release notes with a short summary for the
+# Marketplace and HACS update dialogs; AGENTS.md describes the format.
 #
 # AGENTS.md has the full conventions; README.md has the user-facing docs.
 
