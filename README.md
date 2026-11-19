@@ -62,7 +62,7 @@ changes, use **Reconfigure** on the entry.
 | Water column | Inches of water above the chamber's trapped air, from the last report. Transmitter hardware 16 only. |
 | Water depth | *Once the tank is calibrated.* Inches of water from the tank floor: the water column plus the depth offset. |
 | Percent full | *Once the tank is calibrated and a full depth is set.* The water depth as a percentage of the full depth. Can read over 100%. |
-| Water volume | *Once the tank is calibrated and a full depth and capacity are set.* The capacity scaled by the water depth, in litres or US gallons. |
+| Water volume | *Once the tank is calibrated and a full depth and capacity are set.* The capacity scaled by the water depth, in litres or US gallons. Can read over the capacity. |
 | Tank capacity | *Diagnostic, once the tank is calibrated and a capacity is set.* The capacity at full depth, as a volume you can use in templates. |
 | Transmitter status | *Awaiting first report*, *Reporting* or *Overdue*: where the transmitter stands. |
 | Last report | When this integration first saw the current report. |
@@ -121,24 +121,24 @@ under **Configure** on its entry:
    capacity** appear. A nameplate capacity is often measured to the brim, so
    treat it as a starting point and adjust the capacity until Water volume
    looks right. Volume is the capacity scaled by the water depth, which suits
-   upright cylinders and box-shaped tanks; horizontal cylinders are not
-   modelled.
+   tanks with straight vertical walls, such as upright cylinders and boxes.
+   Tanks whose width changes with height, such as horizontal cylinders or
+   cone-bottomed tanks, are not modelled, so their Water volume is only
+   approximate.
 
 Clear the full depth or the capacity to remove only what depends on it, or
-clear the depth offset to remove every tank sensor. To total a pair of tanks,
-use Home Assistant's **Group** helper (sensor group, type *Sum*), which
-converts units; the *Combine the state of several sensors* helper does not.
+clear the depth offset to remove every tank sensor.
 
 The forms use the units of your Home Assistant unit system: inches and US
-gallons on US customary, millimetres and litres on metric. You can also type a known depth offset in
-**Tank settings** instead of calibrating. Like the water column, tank level
-needs transmitter hardware 16; for other hardware, calibration explains that it
-is unavailable. Calibration also refuses a new report whose water column shows
-under 1 inch (25 mm), which looks the same as a chamber out of the water or a
-leaking air tube. If you measured earlier against a report you can identify,
-for example during an install, work out the offset yourself (measured depth
-minus that report's water column, as Home Assistant shows it) and type it into
-**Tank settings**.
+gallons on US customary, millimetres and litres on metric. You can also type a
+known depth offset in **Tank settings** instead of calibrating. Like the water
+column, tank level needs transmitter hardware 16; for other hardware,
+calibration explains that it is unavailable. Calibration also refuses a new
+report whose water column shows under 1 inch (25 mm), which looks the same as a
+chamber out of the water or a leaking air tube. If you measured earlier against
+a report you can identify, for example during an install, work out the offset
+yourself (measured depth minus that report's water column, both in the form's
+units, not a unit you set a sensor to show) and type it into **Tank settings**.
 
 The sensors themselves follow Home Assistant's display units, which you can
 change per entity under its settings, **Unit of measurement**. On metric,
@@ -151,6 +151,18 @@ the depth offset, **Percent full** at the offset's share of the full depth
 (about 5% for a 5-inch offset in a 100-inch tank) and **Water volume** at the
 same share of the capacity, never 0. An air leak looks the same. Set any "tank
 empty" alert above that floor.
+
+### Totalling several tanks
+
+To total two or more tanks, use Home Assistant's **Group** helper (sensor
+group, type *Sum*), which converts units; the *Combine the state of several
+sensors* helper does not. A sensor group created in the UI adds up only the
+members that have a number, so while a receiver is unreachable its tank drops
+out and the total reads low with no sign of it. To make the total show
+*Unknown* instead, open the group from **Settings → Devices & services →
+Helpers**, choose **Group options** in its settings, and submit with **Ignore
+non-numeric** off. The toggle already shows off, but the group skips
+unavailable members until you submit.
 
 ### How freshness works
 
