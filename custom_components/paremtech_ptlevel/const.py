@@ -41,3 +41,10 @@ DEPTH_OFFSET_RANGE = (-24.0, 60.0)
 A calibration outside this range means the measurement or the reading is
 wrong, not that the chamber really sits there.
 """
+
+MIN_CALIBRATION_WATER_COLUMN = 1.0
+"""Smallest water column, in inches, that calibration will use.
+
+Below it the reading cannot tell a nearly empty tank from a chamber out of
+the water or a leaking air tube, so any offset derived from it is a guess.
+"""

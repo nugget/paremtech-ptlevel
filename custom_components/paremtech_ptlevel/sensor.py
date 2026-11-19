@@ -8,8 +8,9 @@ latest poll and go unavailable when the receiver does not report them.
 
 Water depth and percent full are derived from the water column and the tank
 settings in the entry's options (see ``tank.py``). They exist only once those
-settings are saved, and a tank sensor whose setting is removed is removed from
-the entity registry rather than left behind as unavailable.
+settings are saved. A tank sensor whose setting is removed is removed from the
+entity registry by entry setup (``__init__.py``) rather than left behind as
+unavailable, even while the receiver is unreachable.
 """
 
 from __future__ import annotations
@@ -27,18 +28,15 @@ from homeassistant.const import (
     PERCENTAGE,
     SIGNAL_STRENGTH_DECIBELS_MILLIWATT,
     EntityCategory,
-    Platform,
     UnitOfElectricPotential,
     UnitOfLength,
     UnitOfTemperature,
 )
-from homeassistant.helpers import entity_registry as er
 from homeassistant.util import dt as dt_util
 
-from .const import DOMAIN
 from .coordinator import TRANSMITTER_STATUSES
 from .entity import PTLevelEntity
-from .tank import TankSettings
+from .tank import PERCENT_FULL, WATER_DEPTH, TankSettings, tank_sensor_keys
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -164,12 +162,11 @@ class PTLevelTankSensorEntityDescription(SensorEntityDescription):
     """Describe a sensor computed from the water column and the tank settings.
 
     ``value_fn`` receives the tank settings and the current water column in
-    inches. ``needs_full_depth`` marks a sensor that exists only when the
-    owner has set a full depth.
+    inches. Which settings a sensor needs is decided by its key, in
+    ``tank.tank_sensor_keys``.
     """
 
     value_fn: Callable[[TankSettings, float], float | None]
-    needs_full_depth: bool = False
 
 
 def _percent_full(tank: TankSettings, water_column: float) -> float | None:
@@ -180,8 +177,8 @@ def _percent_full(tank: TankSettings, water_column: float) -> float | None:
 
 TANK_SENSOR_DESCRIPTIONS: tuple[PTLevelTankSensorEntityDescription, ...] = (
     PTLevelTankSensorEntityDescription(
-        key="water_depth",
-        translation_key="water_depth",
+        key=WATER_DEPTH,
+        translation_key=WATER_DEPTH,
         native_unit_of_measurement=UnitOfLength.INCHES,
         device_class=SensorDeviceClass.DISTANCE,
         state_class=SensorStateClass.MEASUREMENT,
@@ -189,19 +186,18 @@ TANK_SENSOR_DESCRIPTIONS: tuple[PTLevelTankSensorEntityDescription, ...] = (
         value_fn=lambda tank, water_column: round(tank.water_depth(water_column), 2),
     ),
     PTLevelTankSensorEntityDescription(
-        key="percent_full",
-        translation_key="percent_full",
+        key=PERCENT_FULL,
+        translation_key=PERCENT_FULL,
         native_unit_of_measurement=PERCENTAGE,
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=0,
         value_fn=_percent_full,
-        needs_full_depth=True,
     ),
 )
 
 
 async def async_setup_entry(
-    hass: HomeAssistant,
+    _hass: HomeAssistant,
     entry: PTLevelConfigEntry,
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
@@ -212,18 +208,13 @@ async def async_setup_entry(
         for description in SENSOR_DESCRIPTIONS
     ]
     tank = TankSettings.from_options(entry.options)
-    registry = er.async_get(hass)
-    for description in TANK_SENSOR_DESCRIPTIONS:
-        if tank is not None and (
-            tank.full_depth is not None or not description.needs_full_depth
-        ):
-            entities.append(PTLevelTankSensorEntity(coordinator, tank, description))
-            continue
-        unique_id = f"{coordinator.data.status.receiver_id}_{description.key}"
-        if entity_id := registry.async_get_entity_id(
-            Platform.SENSOR, DOMAIN, unique_id
-        ):
-            registry.async_remove(entity_id)
+    provided = tank_sensor_keys(entry.options)
+    if tank is not None:
+        entities.extend(
+            PTLevelTankSensorEntity(coordinator, tank, description)
+            for description in TANK_SENSOR_DESCRIPTIONS
+            if description.key in provided
+        )
     async_add_entities(entities)
 
 

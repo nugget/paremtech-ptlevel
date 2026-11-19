@@ -19,6 +19,11 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
     from typing import Any
 
+WATER_DEPTH = "water_depth"
+PERCENT_FULL = "percent_full"
+TANK_SENSOR_KEYS = (WATER_DEPTH, PERCENT_FULL)
+"""Keys of the sensors derived from tank settings, as used in unique IDs."""
+
 
 @dataclass(frozen=True, slots=True)
 class TankSettings:
@@ -40,8 +45,10 @@ class TankSettings:
     def from_options(cls, options: Mapping[str, Any]) -> TankSettings | None:
         """Return the tank settings in an entry's options.
 
-        The answer is ``None`` until the owner has saved tank settings, so an
-        uncalibrated tank grows no depth or percentage entities.
+        The answer is ``None`` until a depth offset is saved, by calibrating or
+        in Tank settings, and again once it is cleared, so an uncalibrated
+        tank grows no depth or percentage entities. A full depth saved on its
+        own waits for the offset.
         """
         if CONF_DEPTH_OFFSET not in options:
             return None
@@ -64,3 +71,18 @@ class TankSettings:
         if self.full_depth is None:
             return None
         return max(0.0, self.water_depth(water_column) / self.full_depth * 100)
+
+
+def tank_sensor_keys(options: Mapping[str, Any]) -> frozenset[str]:
+    """Return the keys of the tank sensors an entry's options provide.
+
+    Water depth needs a depth offset; percent full also needs a full depth.
+    Entry setup removes the others from the entity registry, and the sensor
+    platform creates exactly these.
+    """
+    tank = TankSettings.from_options(options)
+    if tank is None:
+        return frozenset()
+    if tank.full_depth is None:
+        return frozenset({WATER_DEPTH})
+    return frozenset(TANK_SENSOR_KEYS)
