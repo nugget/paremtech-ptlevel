@@ -13,7 +13,7 @@ from custom_components.paremtech_ptlevel.units import (
 )
 
 
-class LengthUnitTest(unittest.TestCase):
+class FormUnitTest(unittest.TestCase):
     """Converting between the shown unit and stored inches."""
 
     def test_unit_follows_the_unit_system(self) -> None:
@@ -32,7 +32,7 @@ class LengthUnitTest(unittest.TestCase):
         ]
         for unit, typed, stored in cases:
             with self.subTest(unit=unit.unit, typed=typed):
-                self.assertEqual(unit.to_inches(typed), stored)
+                self.assertEqual(unit.to_stored(typed), stored)
 
     def test_stored_inches_read_back_in_the_shown_unit(self) -> None:
         """A value typed in millimetres comes back as typed after storage."""
@@ -44,7 +44,7 @@ class LengthUnitTest(unittest.TestCase):
         ]
         for unit, inches, shown, text in cases:
             with self.subTest(unit=unit.unit, inches=inches):
-                self.assertEqual(unit.from_inches(inches), shown)
+                self.assertEqual(unit.from_stored(inches), shown)
                 self.assertEqual(unit.format(inches), text)
 
     def test_bounds_round_inward_to_the_step(self) -> None:
