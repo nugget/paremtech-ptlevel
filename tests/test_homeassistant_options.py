@@ -622,6 +622,7 @@ async def test_tank_form_saves_unchanged_at_the_range_edges(
     result = await _submit(hass, result, prefilled)
 
     assert result.get("type") is FlowResultType.CREATE_ENTRY
+    assert entry.options == {CONF_DEPTH_OFFSET: -24.0, CONF_FULL_DEPTH: 1.0}
 
 
 async def test_unit_system_change_while_a_form_is_open(
