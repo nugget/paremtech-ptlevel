@@ -241,6 +241,14 @@ class PTLevelOptionsFlow(OptionsFlowWithReload):
     _pending: _Calibration | None = None
     """A calibration computed from a new report, waiting for confirmation."""
 
+    _shown_system: UnitSystem | None = None
+    """The unit system the last form was shown in.
+
+    Submissions are read in its units, so a change to Home Assistant's unit
+    system while a form is open cannot reinterpret what the owner typed (a
+    132 mm offset saved as 132 in).
+    """
+
     async def async_step_init(
         self,
         user_input: dict[str, Any] | None = None,  # noqa: ARG002
@@ -259,7 +267,7 @@ class PTLevelOptionsFlow(OptionsFlowWithReload):
         adds the percentage, a capacity adds the tank capacity, and both add
         the water volume. Settings saved without an offset wait for one.
         """
-        units = _tank_units(self.hass.config.units)
+        units = _tank_units(self._unit_system(user_input))
         if user_input is not None:
             options = {
                 key: unit.to_stored(value)
@@ -316,7 +324,7 @@ class PTLevelOptionsFlow(OptionsFlowWithReload):
         (``no_reading``), and for transmitter hardware without a verified scale
         (``unverified_scale``). The other tank settings are kept.
         """
-        units = length_unit(self.hass.config.units)
+        units = length_unit(self._unit_system(user_input))
         read = await self._read_receiver()
         if read is None or (not read.answered and self._baseline is None):
             return self.async_abort(reason="not_loaded")
@@ -402,7 +410,9 @@ class PTLevelOptionsFlow(OptionsFlowWithReload):
         """Show the report and offset a calibration will use, to save or change."""
         if (pending := self._pending) is None:
             return await self.async_step_calibrate()
-        units = length_unit(self.hass.config.units)
+        # The confirmation belongs to the form just submitted, so it keeps
+        # that form's units.
+        units = length_unit(self._shown_system or self.hass.config.units)
         return self.async_show_menu(
             step_id="calibrate_confirm",
             menu_options=["calibrate_save", "calibrate"],
@@ -425,6 +435,17 @@ class PTLevelOptionsFlow(OptionsFlowWithReload):
         return self.async_create_entry(
             data={**self.config_entry.options, CONF_DEPTH_OFFSET: pending.offset}
         )
+
+    def _unit_system(self, user_input: dict[str, Any] | None) -> UnitSystem:
+        """Return the unit system to show a form in, or to read a submission in.
+
+        Showing a form (``user_input`` is ``None``) takes Home Assistant's
+        current unit system and remembers it; reading a submission uses the
+        one the form was shown in.
+        """
+        if user_input is None or self._shown_system is None:
+            self._shown_system = self.hass.config.units
+        return self._shown_system
 
     async def _read_receiver(self) -> _Read | None:
         """Read the receiver now and return the entry's snapshot.
