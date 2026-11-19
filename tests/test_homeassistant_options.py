@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from conftest import load_payload
 from homeassistant.config_entries import ConfigEntryState
-from homeassistant.const import CONF_HOST
+from homeassistant.const import CONF_HOST, STATE_UNAVAILABLE
 from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.helpers import entity_registry as er
 from homeassistant.util.unit_system import (
@@ -23,6 +23,7 @@ from pytest_homeassistant_custom_component.common import (
 )
 
 from custom_components.paremtech_ptlevel.const import (
+    CONF_CAPACITY,
     CONF_DEPTH_OFFSET,
     CONF_FULL_DEPTH,
     CONF_MEASURED_DEPTH,
@@ -189,11 +190,14 @@ async def test_full_depth_alone_waits_for_an_offset(hass: HomeAssistant) -> None
 @pytest.mark.parametrize(
     ("options", "expected"),
     [
-        ({}, {CONF_DEPTH_OFFSET: None, CONF_FULL_DEPTH: None}),
-        ({CONF_FULL_DEPTH: 104.5}, {CONF_DEPTH_OFFSET: None, CONF_FULL_DEPTH: 104.5}),
+        ({}, {CONF_DEPTH_OFFSET: None, CONF_FULL_DEPTH: None, CONF_CAPACITY: None}),
         (
-            {CONF_DEPTH_OFFSET: 5.2, CONF_FULL_DEPTH: 104.5},
-            {CONF_DEPTH_OFFSET: 5.2, CONF_FULL_DEPTH: 104.5},
+            {CONF_FULL_DEPTH: 104.5},
+            {CONF_DEPTH_OFFSET: None, CONF_FULL_DEPTH: 104.5, CONF_CAPACITY: None},
+        ),
+        (
+            {CONF_DEPTH_OFFSET: 5.2, CONF_FULL_DEPTH: 104.5, CONF_CAPACITY: 5000.0},
+            {CONF_DEPTH_OFFSET: 5.2, CONF_FULL_DEPTH: 104.5, CONF_CAPACITY: 5000.0},
         ),
     ],
 )
@@ -227,7 +231,10 @@ async def test_calibrate_uses_the_report_sent_after_opening(
     recognized by its reading, not its time.
     """
     freezer.move_to(START)
-    entry = await _setup(hass, {CONF_DEPTH_OFFSET: 0.0, CONF_FULL_DEPTH: 104.5})
+    entry = await _setup(
+        hass,
+        {CONF_DEPTH_OFFSET: 0.0, CONF_FULL_DEPTH: 104.5, CONF_CAPACITY: 5000.0},
+    )
 
     result = await _open(hass, entry, "calibrate")
     assert result.get("type") is FlowResultType.FORM
@@ -249,12 +256,20 @@ async def test_calibrate_uses_the_report_sent_after_opening(
     assert placeholders.get("water_column") == "91.2"
     assert placeholders.get("measured_depth") == "96.0"
     assert placeholders.get("offset") == "4.8"
-    assert entry.options == {CONF_DEPTH_OFFSET: 0.0, CONF_FULL_DEPTH: 104.5}
+    assert entry.options == {
+        CONF_DEPTH_OFFSET: 0.0,
+        CONF_FULL_DEPTH: 104.5,
+        CONF_CAPACITY: 5000.0,
+    }
 
     result = await _submit(hass, result, SAVE)
 
     assert result.get("type") is FlowResultType.CREATE_ENTRY
-    assert entry.options == {CONF_DEPTH_OFFSET: 4.7719, CONF_FULL_DEPTH: 104.5}
+    assert entry.options == {
+        CONF_DEPTH_OFFSET: 4.7719,
+        CONF_FULL_DEPTH: 104.5,
+        CONF_CAPACITY: 5000.0,
+    }
     assert _state(hass, "water_depth") == "96.0"
     assert _state(hass, "percent_full") == "91.9"
 
@@ -497,7 +512,13 @@ def _field(result: Any, key: str) -> dict[str, Any]:
     [
         (
             US_CUSTOMARY_SYSTEM,
-            {"unit": "in", "bounds": (-24.0, 60.0), "saved": (5.2, 104.5)},
+            {
+                "unit": "in",
+                "bounds": (-24.0, 60.0),
+                "saved": (5.2, 104.5),
+                "volume_unit": "gal",
+                "capacity_bounds": (1.0, 1_000_000.0),
+            },
         ),
         (
             METRIC_SYSTEM,
@@ -505,6 +526,8 @@ def _field(result: Any, key: str) -> dict[str, Any]:
                 "unit": "mm",
                 "bounds": (-609.6, 1524.0),
                 "saved": (132.08, 2654.3),
+                "volume_unit": "L",
+                "capacity_bounds": (3.79, 3_785_411.78),
             },
         ),
     ],
@@ -522,9 +545,16 @@ async def test_tank_form_uses_the_unit_system(
     assert (offset["min"], offset["max"]) == expected["bounds"]
     assert offset["step"] == "any"
     assert _field(result, CONF_FULL_DEPTH)["unit_of_measurement"] == expected["unit"]
-    assert _suggested(result) == dict(
-        zip((CONF_DEPTH_OFFSET, CONF_FULL_DEPTH), expected["saved"], strict=True)
-    )
+    capacity = _field(result, CONF_CAPACITY)
+    assert capacity["unit_of_measurement"] == expected["volume_unit"]
+    assert (capacity["min"], capacity["max"]) == expected["capacity_bounds"]
+    assert capacity["step"] == "any"
+    assert _suggested(result) == {
+        **dict(
+            zip((CONF_DEPTH_OFFSET, CONF_FULL_DEPTH), expected["saved"], strict=True)
+        ),
+        CONF_CAPACITY: None,
+    }
     placeholders = result.get("description_placeholders") or {}
     assert placeholders.get("unit") == expected["unit"]
 
@@ -545,7 +575,11 @@ async def test_tank_settings_in_millimetres_are_stored_in_inches(
     assert float(depth) == pytest.approx(101.39 * 25.4)
 
     result = await _open(hass, entry, "tank")
-    assert _suggested(result) == {CONF_DEPTH_OFFSET: 132.0, CONF_FULL_DEPTH: 2654.0}
+    assert _suggested(result) == {
+        CONF_DEPTH_OFFSET: 132.0,
+        CONF_FULL_DEPTH: 2654.0,
+        CONF_CAPACITY: None,
+    }
 
 
 async def test_calibrate_in_millimetres(
@@ -607,22 +641,145 @@ async def test_low_reading_cutoff_in_millimetres(
         assert result.get("errors") == {"base": outcome}
 
 
-async def test_tank_form_saves_unchanged_at_the_range_edges(
+@pytest.mark.parametrize(
+    ("system", "unit", "states"),
+    [
+        (US_CUSTOMARY_SYSTEM, "gal", ("4851.2", "5000.0")),
+        (METRIC_SYSTEM, "L", ("18363.8", "18927.1")),
+    ],
+)
+async def test_volume_sensors_use_the_unit_system(
+    hass: HomeAssistant, system: UnitSystem, unit: str, states: tuple[str, str]
+) -> None:
+    """Volumes report natively in the unit system's unit, rounded, unconverted.
+
+    The exact states show the integration rounded in that unit, and the lack
+    of a suggested display unit shows Home Assistant had nothing to convert.
+    """
+    await _setup(
+        hass,
+        {CONF_DEPTH_OFFSET: 5.2, CONF_FULL_DEPTH: 104.5, CONF_CAPACITY: 5000.0},
+        system,
+    )
+
+    registry = er.async_get(hass)
+    for key, expected in zip(("water_volume", "tank_capacity"), states, strict=True):
+        entity_id = f"sensor.wellsw_tw_{key}"
+        state = hass.states.get(entity_id)
+        assert state is not None, key
+        assert state.state == expected, key
+        assert state.attributes["unit_of_measurement"] == unit
+        assert state.attributes["device_class"] == "volume_storage"
+        registry_entry = registry.async_get(entity_id)
+        assert registry_entry is not None
+        assert "sensor.private" not in registry_entry.options, key
+    volume_state = hass.states.get("sensor.wellsw_tw_water_volume")
+    capacity_state = hass.states.get("sensor.wellsw_tw_tank_capacity")
+    assert volume_state is not None
+    assert capacity_state is not None
+    assert volume_state.attributes["state_class"] == "measurement"
+    assert "state_class" not in capacity_state.attributes
+
+
+async def test_tank_capacity_without_a_water_column(
+    hass: HomeAssistant, receiver: FakeReceiver
+) -> None:
+    """Older transmitter hardware has no water column, but capacity still shows."""
+    receiver.payload = dict(load_payload("config_reading"), tx_hardware_version="5")
+    await _setup(
+        hass, {CONF_DEPTH_OFFSET: 5.2, CONF_FULL_DEPTH: 104.5, CONF_CAPACITY: 5000.0}
+    )
+
+    assert _state(hass, "tank_capacity") == "5000.0"
+    for key in ("water_depth", "percent_full", "water_volume"):
+        assert _state(hass, key) == STATE_UNAVAILABLE, key
+
+
+async def test_capacity_without_full_depth_gives_only_tank_capacity(
     hass: HomeAssistant,
 ) -> None:
-    """Values at the edges of their ranges prefill exactly at the metric bounds."""
+    """Volume needs a full depth; capacity alone shows just the capacity."""
+    await _setup(hass, {CONF_DEPTH_OFFSET: 5.2, CONF_CAPACITY: 5000.0})
+
+    assert _state(hass, "tank_capacity") == "5000.0"
+    assert _state(hass, "water_volume") is None
+
+
+async def test_clearing_capacity_removes_the_volume_sensors(
+    hass: HomeAssistant,
+) -> None:
+    """Emptying the capacity removes both volume sensors and keeps the rest."""
     entry = await _setup(
-        hass, {CONF_DEPTH_OFFSET: -24.0, CONF_FULL_DEPTH: 1.0}, METRIC_SYSTEM
+        hass, {CONF_DEPTH_OFFSET: 5.2, CONF_FULL_DEPTH: 104.5, CONF_CAPACITY: 5000.0}
+    )
+    assert _registered(hass, "water_volume")
+
+    result = await _open(hass, entry, "tank")
+    assert _suggested(result)[CONF_CAPACITY] == 5000.0
+    assert _field(result, CONF_CAPACITY)["unit_of_measurement"] == "gal"
+    await _submit(hass, result, {CONF_DEPTH_OFFSET: 5.2, CONF_FULL_DEPTH: 104.5})
+
+    assert entry.options == {CONF_DEPTH_OFFSET: 5.2, CONF_FULL_DEPTH: 104.5}
+    assert not _registered(hass, "water_volume")
+    assert not _registered(hass, "tank_capacity")
+    assert _state(hass, "percent_full") == "97.0"
+
+
+async def test_capacity_in_litres_is_stored_in_gallons(hass: HomeAssistant) -> None:
+    """A metric owner types litres; the options keep US gallons."""
+    entry = await _setup(
+        hass, {CONF_DEPTH_OFFSET: 5.2, CONF_FULL_DEPTH: 104.5}, METRIC_SYSTEM
     )
 
     result = await _open(hass, entry, "tank")
-    prefilled = _suggested(result)
-    assert prefilled == {CONF_DEPTH_OFFSET: -609.6, CONF_FULL_DEPTH: 25.4}
+    assert _field(result, CONF_CAPACITY)["unit_of_measurement"] == "L"
+    placeholders = result.get("description_placeholders") or {}
+    assert placeholders.get("volume_unit") == "L"
+    await _submit(
+        hass,
+        result,
+        {CONF_DEPTH_OFFSET: 132.0, CONF_FULL_DEPTH: 2654.0, CONF_CAPACITY: 18927.0},
+    )
 
-    result = await _submit(hass, result, prefilled)
+    assert entry.options[CONF_CAPACITY] == 4999.9844
+    result = await _open(hass, entry, "tank")
+    assert _suggested(result)[CONF_CAPACITY] == 18927.0
+
+
+@pytest.mark.parametrize(
+    ("stored", "prefills"),
+    [
+        (
+            {
+                CONF_DEPTH_OFFSET: -24.0,
+                CONF_FULL_DEPTH: 1.0,
+                CONF_CAPACITY: 1_000_000.0,
+            },
+            {
+                CONF_DEPTH_OFFSET: -609.6,
+                CONF_FULL_DEPTH: 25.4,
+                CONF_CAPACITY: 3_785_411.78,
+            },
+        ),
+        (
+            {CONF_DEPTH_OFFSET: 60.0, CONF_FULL_DEPTH: 600.0, CONF_CAPACITY: 1.0},
+            {CONF_DEPTH_OFFSET: 1524.0, CONF_FULL_DEPTH: 15240.0, CONF_CAPACITY: 3.79},
+        ),
+    ],
+)
+async def test_tank_form_saves_unchanged_at_the_range_edges(
+    hass: HomeAssistant, stored: dict[str, float], prefills: dict[str, float]
+) -> None:
+    """Values at the edges of their ranges prefill at the metric bounds and keep."""
+    entry = await _setup(hass, stored, METRIC_SYSTEM)
+
+    result = await _open(hass, entry, "tank")
+    assert _suggested(result) == prefills
+
+    result = await _submit(hass, result, prefills)
 
     assert result.get("type") is FlowResultType.CREATE_ENTRY
-    assert entry.options == {CONF_DEPTH_OFFSET: -24.0, CONF_FULL_DEPTH: 1.0}
+    assert entry.options == stored
 
 
 async def test_unit_system_change_while_a_form_is_open(
@@ -648,26 +805,55 @@ async def test_unit_system_change_while_a_form_is_open(
     assert entry.options == {CONF_DEPTH_OFFSET: 4.8349}
 
 
-@pytest.mark.parametrize(
-    ("system", "prefill", "new_full_depth"),
-    [
-        (US_CUSTOMARY_SYSTEM, 4.77, 100.0),
-        (METRIC_SYSTEM, 121.21, 2540.0),
-    ],
-)
-async def test_untouched_offset_keeps_its_precision(
-    hass: HomeAssistant, system: UnitSystem, prefill: float, new_full_depth: float
+async def test_capacity_is_read_in_the_units_its_form_showed(
+    hass: HomeAssistant,
 ) -> None:
-    """Changing only the full depth leaves a calibrated offset exactly as it was."""
-    entry = await _setup(
-        hass, {CONF_DEPTH_OFFSET: 4.7719, CONF_FULL_DEPTH: 104.5}, system
-    )
+    """A capacity typed in litres stays litres if the unit system changes."""
+    entry = await _setup(hass, {CONF_DEPTH_OFFSET: 5.2}, METRIC_SYSTEM)
 
     result = await _open(hass, entry, "tank")
-    assert _suggested(result)[CONF_DEPTH_OFFSET] == prefill
+    hass.config.units = US_CUSTOMARY_SYSTEM
+    await _submit(hass, result, {CONF_DEPTH_OFFSET: 132.0, CONF_CAPACITY: 18927.0})
+
+    assert entry.options == {CONF_DEPTH_OFFSET: 5.1969, CONF_CAPACITY: 4999.9844}
+
+
+@pytest.mark.parametrize(
+    ("system", "prefills", "new_full_depth"),
+    [
+        (US_CUSTOMARY_SYSTEM, (4.77, 4999.99), 100.0),
+        (METRIC_SYSTEM, (121.21, 18927.01), 2540.0),
+    ],
+)
+async def test_untouched_settings_keep_their_precision(
+    hass: HomeAssistant,
+    system: UnitSystem,
+    prefills: tuple[float, float],
+    new_full_depth: float,
+) -> None:
+    """Changing only the full depth leaves the offset and capacity exactly as stored."""
+    entry = await _setup(
+        hass,
+        {CONF_DEPTH_OFFSET: 4.7719, CONF_FULL_DEPTH: 104.5, CONF_CAPACITY: 4999.9876},
+        system,
+    )
+    offset, capacity = prefills
+
+    result = await _open(hass, entry, "tank")
+    assert _suggested(result)[CONF_DEPTH_OFFSET] == offset
+    assert _suggested(result)[CONF_CAPACITY] == capacity
     await _submit(
-        hass, result, {CONF_DEPTH_OFFSET: prefill, CONF_FULL_DEPTH: new_full_depth}
+        hass,
+        result,
+        {
+            CONF_DEPTH_OFFSET: offset,
+            CONF_FULL_DEPTH: new_full_depth,
+            CONF_CAPACITY: capacity,
+        },
     )
 
-    assert entry.options[CONF_DEPTH_OFFSET] == 4.7719
-    assert entry.options[CONF_FULL_DEPTH] == 100.0
+    assert entry.options == {
+        CONF_DEPTH_OFFSET: 4.7719,
+        CONF_FULL_DEPTH: 100.0,
+        CONF_CAPACITY: 4999.9876,
+    }

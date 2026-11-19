@@ -21,6 +21,7 @@ from homeassistant.util import dt as dt_util
 from yarl import URL
 
 from .const import (
+    CONF_CAPACITY,
     CONF_DEPTH_OFFSET,
     CONF_FULL_DEPTH,
     CONF_MEASURED_DEPTH,
@@ -34,7 +35,16 @@ from .ptlevel import (
     PTLevelUnsupportedError,
     ReceiverStatus,
 )
-from .units import displayed, format_length, inches_to_field, length_unit, to_inches
+from .units import (
+    displayed,
+    format_length,
+    gallons_to_field,
+    inches_to_field,
+    length_unit,
+    to_gallons,
+    to_inches,
+    volume_unit,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -55,7 +65,10 @@ TANK_LENGTH_RANGES: dict[str, tuple[float, float]] = {
     CONF_DEPTH_OFFSET: DEPTH_OFFSET_RANGE,
     CONF_FULL_DEPTH: (1.0, MAX_DEPTH),
 }
-"""Each tank setting's accepted range, in the stored unit (inches)."""
+"""Each length setting's accepted range, in the stored unit (inches)."""
+
+MAX_CAPACITY = 1_000_000.0
+"""Largest tank capacity the forms accept, in US gallons."""
 
 
 def _length_field(unit: str, low: float, high: float) -> NumberSelector:
@@ -75,20 +88,33 @@ def _length_field(unit: str, low: float, high: float) -> NumberSelector:
     )
 
 
-def _tank_schema(unit: str) -> probatio.Schema:
-    """Return the tank settings form, with lengths in ``unit``.
+def _capacity_field(unit: str) -> NumberSelector:
+    """Return the typed-in capacity field in volume ``unit``."""
+    return NumberSelector(
+        NumberSelectorConfig(
+            min=gallons_to_field(1.0, unit),
+            max=gallons_to_field(MAX_CAPACITY, unit),
+            step="any",
+            unit_of_measurement=unit,
+            mode=NumberSelectorMode.BOX,
+        )
+    )
 
-    Both settings are optional, and an empty field removes its option. The
+
+def _tank_schema(length: str, volume: str) -> probatio.Schema:
+    """Return the tank settings form, in the owner's length and volume units.
+
+    Every setting is optional, and an empty field removes its option. The
     depth offset deliberately has no default: an owner who opens the form
     only to set the full depth must not end up with an uncalibrated offset of
     zero, which would create a Water depth that is really the water column.
     """
-    return probatio.Schema(
-        {
-            probatio.Optional(key): _length_field(unit, *TANK_LENGTH_RANGES[key])
-            for key in TANK_LENGTH_RANGES
-        }
-    )
+    fields: dict[Any, NumberSelector] = {
+        probatio.Optional(key): _length_field(length, *TANK_LENGTH_RANGES[key])
+        for key in TANK_LENGTH_RANGES
+    }
+    fields[probatio.Optional(CONF_CAPACITY)] = _capacity_field(volume)
+    return probatio.Schema(fields)
 
 
 def _calibrate_schema(unit: str) -> probatio.Schema:
@@ -114,7 +140,7 @@ class PTLevelConfigFlow(  # pyright: ignore[reportGeneralTypeIssues]
     @staticmethod
     @callback
     def async_get_options_flow(config_entry: ConfigEntry) -> PTLevelOptionsFlow:  # noqa: ARG004
-        """Return the flow that sets up the tank's depth and fill level."""
+        """Return the flow that sets up the tank settings and calibration."""
         return PTLevelOptionsFlow()
 
     async def async_step_user(
@@ -187,13 +213,13 @@ class PTLevelConfigFlow(  # pyright: ignore[reportGeneralTypeIssues]
 
 
 class PTLevelOptionsFlow(OptionsFlowWithReload):
-    """Set up the tank's water depth and fill level.
+    """Set up the tank's water depth, fill level and volume.
 
-    Both routes write the same two options. *Calibrate* derives the depth
-    offset from a water depth measured by hand against the current reading,
-    which is how an owner normally finds it; *tank settings* edits the offset
-    and the full depth directly. Saving reloads the entry, so the depth and
-    percentage entities appear or go away with their settings.
+    *Calibrate* sets only the depth offset, derived from a water depth
+    measured by hand against a fresh report, which is how an owner normally
+    finds it. *Tank settings* edits the depth offset, the full depth and the
+    capacity directly. Saving reloads the entry, so the tank sensors appear or
+    go away with their settings.
     """
 
     _baseline: tuple[datetime, TransmitterReading] | None = None
@@ -235,37 +261,45 @@ class PTLevelOptionsFlow(OptionsFlowWithReload):
     async def async_step_tank(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Edit the depth offset and the full depth.
+        """Edit the depth offset, the full depth and the capacity.
 
-        The form shows lengths in the owner's unit (see ``units.py``) and
-        stores them in inches. An empty field removes its option. Without a
-        depth offset there are no tank entities at all, and without a full
-        depth there is no percentage; a full depth saved on its own waits for
-        the offset. A setting submitted unchanged from its prefill keeps its
-        stored value exactly.
+        The form shows each setting in the owner's unit (see ``units.py``) and
+        stores lengths in inches and the capacity in US gallons. An empty
+        field removes its option. Without a depth offset there are no tank
+        entities at all; a full depth adds the percentage, a capacity adds the
+        tank capacity, and both add the water volume. Settings saved without
+        an offset wait for one. A setting submitted unchanged from its prefill
+        keeps its stored value exactly.
         """
-        unit = length_unit(self._unit_system(user_input))
+        system = self._unit_system(user_input)
+        length, volume = length_unit(system), volume_unit(system)
         saved = self.config_entry.options
         if user_input is not None:
             options = {
-                key: self._kept_or(key, value, lambda v: to_inches(v, unit))
+                key: self._kept_or(key, value, lambda v: to_inches(v, length))
                 for key in TANK_LENGTH_RANGES
                 if (value := user_input.get(key)) is not None
             }
+            if (capacity := user_input.get(CONF_CAPACITY)) is not None:
+                options[CONF_CAPACITY] = self._kept_or(
+                    CONF_CAPACITY, capacity, lambda v: to_gallons(v, volume)
+                )
             return self.async_create_entry(data=options)
 
         suggested = {
-            key: inches_to_field(saved[key], unit)
+            key: inches_to_field(saved[key], length)
             for key in TANK_LENGTH_RANGES
             if key in saved
         }
+        if CONF_CAPACITY in saved:
+            suggested[CONF_CAPACITY] = gallons_to_field(saved[CONF_CAPACITY], volume)
         self._prefilled = suggested
         return self.async_show_form(
             step_id="tank",
             data_schema=self.add_suggested_values_to_schema(
-                _tank_schema(unit), suggested
+                _tank_schema(length, volume), suggested
             ),
-            description_placeholders={"unit": unit},
+            description_placeholders={"unit": length, "volume_unit": volume},
         )
 
     async def async_step_calibrate(
@@ -297,7 +331,7 @@ class PTLevelOptionsFlow(OptionsFlowWithReload):
         The step aborts when the entry is not loaded or the receiver does not
         answer when the form first opens (``not_loaded``), before any report
         (``no_reading``), and for transmitter hardware without a verified scale
-        (``unverified_scale``). The full depth, if set, is kept.
+        (``unverified_scale``). The other tank settings are kept.
         """
         unit = length_unit(self._unit_system(user_input))
         read = await self._read_receiver()
@@ -404,7 +438,7 @@ class PTLevelOptionsFlow(OptionsFlowWithReload):
         self,
         user_input: dict[str, Any] | None = None,  # noqa: ARG002
     ) -> ConfigFlowResult:
-        """Save the confirmed depth offset, keeping the full depth."""
+        """Save the confirmed depth offset, keeping the other tank settings."""
         if (pending := self._pending) is None:
             return await self.async_step_calibrate()
         return self.async_create_entry(

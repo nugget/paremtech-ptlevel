@@ -59,6 +59,9 @@
       "raw_pressure": {
         "name": "Raw pressure reading"
       },
+      "tank_capacity": {
+        "name": "Tank capacity"
+      },
       "transmitter_signal": {
         "name": "Transmitter signal"
       },
@@ -79,6 +82,9 @@
       "water_depth": {
         "name": "Water depth"
       },
+      "water_volume": {
+        "name": "Water volume"
+      },
       "wifi_signal": {
         "name": "WiFi signal"
       },
@@ -91,7 +97,7 @@
     "step": {
       "init": {
         "title": "Tank level",
-        "description": "The water column is measured from the chamber's air pocket, a few inches above the tank floor. Calibrate against a measured depth to get the tank's water depth, then set the full depth in Tank settings to get a percentage.",
+        "description": "The water column is measured from the chamber's air pocket, a few inches above the tank floor. Calibrate against a measured depth to get the tank's water depth, then in Tank settings set the full depth to get a percentage, and a capacity to get the water volume.",
         "menu_options": {
           "calibrate": "Calibrate from a measured depth",
           "tank": "Tank settings"
@@ -117,14 +123,16 @@
       },
       "tank": {
         "title": "Tank settings",
-        "description": "Water depth is the water column plus the depth offset, and Percent full is the water depth as a share of the full depth. Both need a depth offset: clear it to remove them, and clear the full depth to remove only the percentage. The chamber cannot sense water below its own air pocket, so the lowest reading means at or below the chamber. Lengths use {unit}, the unit Home Assistant uses for your unit system.",
+        "description": "Water depth is the water column plus the depth offset, and Percent full is the water depth as a share of the full depth. With a capacity as well, Water volume is that capacity scaled by the water depth, which suits any tank with straight vertical walls. Every tank sensor needs a depth offset: clear it to remove them all, or clear the full depth or capacity to remove only what depends on it. The chamber cannot sense water below its own air pocket, so the lowest reading means at or below the chamber. Lengths use {unit} and volumes use {volume_unit}, the units Home Assistant uses for your unit system.",
         "data": {
           "depth_offset": "Depth offset",
-          "full_depth": "Full depth"
+          "full_depth": "Full depth",
+          "capacity": "Capacity at full depth"
         },
         "data_description": {
           "depth_offset": "How much to add to the water column to get the water depth: about the height of the chamber's air pocket above the floor. Calibrating sets it for you.",
-          "full_depth": "Water depth that counts as 100%. Use the level where the fill pump stops, or the overflow if nothing stops the fill."
+          "full_depth": "Water depth that counts as 100%. Use the level where the fill pump stops, or the overflow if nothing stops the fill.",
+          "capacity": "How much the tank holds when the water is at the full depth. A nameplate capacity is often measured to the brim, so start from your best estimate and adjust it until Water volume looks right."
         }
       }
     },
@@ -137,7 +145,7 @@
     "abort": {
       "no_reading": "There is no report to start from yet. Press the transmitter's button and wait a minute for the report to reach the receiver, then open Calibrate again and follow its steps; you will press the button once more after the form opens.",
       "not_loaded": "The receiver is not connected right now, so there is no current reading to calibrate against. Once Home Assistant can reach it, open Calibrate again; you will need to press the transmitter's button after the form opens.",
-      "unverified_scale": "This transmitter's hardware has no verified pressure scale, so there is no water column to calibrate against. Water depth and percent full need transmitter hardware 16."
+      "unverified_scale": "This transmitter's hardware has no verified pressure scale, so there is no water column to calibrate against. Water depth, percent full and water volume need transmitter hardware 16."
     }
   }
 }
