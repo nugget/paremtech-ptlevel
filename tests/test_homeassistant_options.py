@@ -791,3 +791,44 @@ async def test_capacity_is_read_in_the_units_its_form_showed(
     await _submit(hass, result, {CONF_DEPTH_OFFSET: 132.0, CONF_CAPACITY: 18927.0})
 
     assert entry.options == {CONF_DEPTH_OFFSET: 5.1969, CONF_CAPACITY: 4999.9844}
+
+
+@pytest.mark.parametrize(
+    ("system", "prefills", "new_full_depth"),
+    [
+        (US_CUSTOMARY_SYSTEM, (4.77, 4999.98), 100.0),
+        (METRIC_SYSTEM, (121.21, 18927.0), 2540.0),
+    ],
+)
+async def test_untouched_settings_keep_their_precision(
+    hass: HomeAssistant,
+    system: UnitSystem,
+    prefills: tuple[float, float],
+    new_full_depth: float,
+) -> None:
+    """Changing only the full depth leaves the offset and capacity exactly as stored."""
+    entry = await _setup(
+        hass,
+        {CONF_DEPTH_OFFSET: 4.7719, CONF_FULL_DEPTH: 104.5, CONF_CAPACITY: 4999.9844},
+        system,
+    )
+    offset, capacity = prefills
+
+    result = await _open(hass, entry, "tank")
+    assert _suggested(result)[CONF_DEPTH_OFFSET] == offset
+    assert _suggested(result)[CONF_CAPACITY] == capacity
+    await _submit(
+        hass,
+        result,
+        {
+            CONF_DEPTH_OFFSET: offset,
+            CONF_FULL_DEPTH: new_full_depth,
+            CONF_CAPACITY: capacity,
+        },
+    )
+
+    assert entry.options == {
+        CONF_DEPTH_OFFSET: 4.7719,
+        CONF_FULL_DEPTH: 100.0,
+        CONF_CAPACITY: 4999.9844,
+    }
