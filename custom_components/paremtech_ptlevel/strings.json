@@ -99,7 +99,7 @@
       },
       "calibrate": {
         "title": "Calibrate from a measured depth",
-        "description": "The latest report, seen {reported}, shows {water_column} in of water above the chamber. For an accurate offset, press the transmitter's button for a fresh report, then measure the water from the tank floor to the surface straight away, while no water is being drawn or pumped in. Check that the report time here is the one from just before you measured, then enter the depth. The difference from the water column becomes the depth offset.",
+        "description": "The latest report Home Assistant has seen, at {reported}, shows {water_column} in of water above the chamber. For an accurate offset, press the transmitter's button, then straight away measure the water from the tank floor to the surface while no water is being drawn or pumped in, and only then open this form: it reads the receiver as it opens. Home Assistant times a report when it first sees it, so the time shown must be no earlier than your button press. If it is earlier, the new report has not arrived yet: close this form and open it again in a minute. The difference between the depth you enter and the water column becomes the depth offset.",
         "data": {
           "measured_depth": "Measured water depth"
         },

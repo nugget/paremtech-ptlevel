@@ -25,6 +25,8 @@ from custom_components.paremtech_ptlevel.const import (
     SCAN_INTERVAL,
 )
 from custom_components.paremtech_ptlevel.ptlevel import PTLevelConnectionError
+from custom_components.paremtech_ptlevel.sensor import TANK_SENSOR_DESCRIPTIONS
+from custom_components.paremtech_ptlevel.tank import TANK_SENSOR_KEYS
 
 if TYPE_CHECKING:
     from conftest import FakeReceiver
@@ -228,18 +230,28 @@ async def test_calibrate_refuses_an_implausible_depth(hass: HomeAssistant) -> No
     assert entry.options == {CONF_DEPTH_OFFSET: 3.8}
 
 
+@pytest.mark.parametrize("polled", [True, False])
 async def test_calibrate_refuses_a_report_that_arrived_while_open(
-    hass: HomeAssistant, receiver: FakeReceiver, freezer: FrozenDateTimeFactory
+    hass: HomeAssistant,
+    receiver: FakeReceiver,
+    freezer: FrozenDateTimeFactory,
+    polled: bool,
 ) -> None:
-    """A newer report than the one shown is not used until the owner sees it."""
+    """A newer report than the one shown is not used until the owner sees it.
+
+    Without a scheduled poll in between, the submission itself reads the
+    receiver and finds the report; the clock stays frozen, so the report is
+    recognized by its reading, not its time.
+    """
     freezer.move_to(START)
     entry = await _setup(hass, {})
     result = await _open(hass, entry, "calibrate")
 
     receiver.set_reading(33000, tx_rssi="-121")
-    freezer.tick(SCAN_INTERVAL)
-    async_fire_time_changed(hass)
-    await hass.async_block_till_done()
+    if polled:
+        freezer.tick(SCAN_INTERVAL)
+        async_fire_time_changed(hass)
+        await hass.async_block_till_done()
 
     result = await _submit(hass, result, {CONF_MEASURED_DEPTH: 104.5})
     assert result.get("type") is FlowResultType.FORM
@@ -301,6 +313,57 @@ async def test_calibrate_needs_a_loaded_entry(
 
     assert result.get("type") is FlowResultType.ABORT
     assert result.get("reason") == "not_loaded"
+
+
+async def test_calibrate_stops_when_a_loaded_receiver_stops_answering(
+    hass: HomeAssistant, receiver: FakeReceiver
+) -> None:
+    """A loaded entry whose receiver went quiet does not calibrate on old data."""
+    entry = await _setup(hass, {})
+    receiver.error = PTLevelConnectionError("refused")
+
+    result = await _open(hass, entry, "calibrate")
+
+    assert entry.state is ConfigEntryState.LOADED
+    assert result.get("type") is FlowResultType.ABORT
+    assert result.get("reason") == "not_loaded"
+
+
+async def test_calibrate_stops_when_the_receiver_drops_before_submit(
+    hass: HomeAssistant, receiver: FakeReceiver
+) -> None:
+    """The submission reads the receiver too, and stops if it has gone quiet."""
+    entry = await _setup(hass, {})
+    result = await _open(hass, entry, "calibrate")
+    receiver.error = PTLevelConnectionError("refused")
+
+    result = await _submit(hass, result, {CONF_MEASURED_DEPTH: 104.5})
+
+    assert result.get("type") is FlowResultType.ABORT
+    assert result.get("reason") == "not_loaded"
+    assert entry.options == {}
+
+
+async def test_clearing_settings_offline_still_removes_tank_sensors(
+    hass: HomeAssistant, receiver: FakeReceiver
+) -> None:
+    """Clearing the settings while the receiver is unreachable removes the sensors."""
+    entry = await _setup(hass, {CONF_DEPTH_OFFSET: 5.2, CONF_FULL_DEPTH: 104.5})
+    assert _registered(hass, "water_depth")
+    receiver.error = PTLevelConnectionError("refused")
+
+    result = await _open(hass, entry, "tank")
+    await _submit(hass, result, {})
+
+    assert entry.state is ConfigEntryState.SETUP_RETRY
+    assert entry.options == {}
+    assert not _registered(hass, "water_depth")
+    assert not _registered(hass, "percent_full")
+
+
+def test_tank_sensor_descriptions_match_tank_keys() -> None:
+    """The sensor platform describes exactly the sensors tank settings provide."""
+    assert {d.key for d in TANK_SENSOR_DESCRIPTIONS} == set(TANK_SENSOR_KEYS)
 
 
 async def test_calibrate_needs_a_reading(

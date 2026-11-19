@@ -39,7 +39,8 @@ if TYPE_CHECKING:
 
     from homeassistant.config_entries import ConfigEntry, ConfigFlowResult
 
-    from .coordinator import PTLevelData
+    from .coordinator import PTLevelCoordinator, PTLevelData
+    from .ptlevel import TransmitterReading
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -175,8 +176,12 @@ class PTLevelOptionsFlow(OptionsFlowWithReload):
     percentage entities appear or go away with their settings.
     """
 
-    _shown_report: datetime | None = None
-    """The report the calibrate form last showed, to catch one arriving meanwhile."""
+    _shown_report: tuple[datetime, TransmitterReading] | None = None
+    """The report the calibrate form last showed, to catch one arriving meanwhile.
+
+    It is identified by its reading as well as its time, because two reports
+    can be stamped with the same time (as under a frozen test clock).
+    """
 
     async def async_step_init(
         self,
@@ -215,22 +220,25 @@ class PTLevelOptionsFlow(OptionsFlowWithReload):
         """Set the depth offset from a measured water depth.
 
         The offset is the measured depth minus the water column of the report
-        the form showed, so the owner measures right after a fresh report. If
-        another report arrives while the form is open, the submission is
-        refused with ``new_report`` and the form shows the new reading rather
-        than silently using a value the owner never saw. A result outside
+        the form showed, so the owner measures right after a fresh report. The
+        receiver is read afresh each time the form is shown or submitted, so
+        the step never works from a poll up to a minute old. If another report
+        arrives while the form is open, the submission is refused with
+        ``new_report`` and the form shows the new reading rather than silently
+        using a value the owner never saw. A result outside
         ``DEPTH_OFFSET_RANGE`` is refused as a mistake. The full depth, if set,
         is kept.
 
         The step aborts, each with its own explanation, when the entry is not
-        loaded (``not_loaded``), before any report (``no_reading``), for
-        transmitter hardware without a verified scale (``unverified_scale``),
-        and when the water column, at the one decimal the owner sees, is under
-        ``MIN_CALIBRATION_WATER_COLUMN`` (``low_reading``), which looks the
-        same as a chamber out of the water or a leaking air tube. Comparing
-        the shown value means a refused reading never displays as 1.0 in.
+        loaded or the receiver does not answer (``not_loaded``), before any
+        report (``no_reading``), for transmitter hardware without a verified
+        scale (``unverified_scale``), and when the water column, at the one
+        decimal the owner sees, is under ``MIN_CALIBRATION_WATER_COLUMN``
+        (``low_reading``), which looks the same as a chamber out of the water
+        or a leaking air tube. Comparing the shown value means a refused
+        reading never displays as 1.0 in.
         """
-        data = self._loaded_data()
+        data = await self._fresh_data()
         if data is None:
             return self.async_abort(reason="not_loaded")
         if data.reading is None or data.last_report is None:
@@ -245,12 +253,13 @@ class PTLevelOptionsFlow(OptionsFlowWithReload):
                 description_placeholders={"water_column": f"{shown_column:.1f}"},
             )
         reported = data.last_report
+        report = (reported, data.reading)
 
         errors: dict[str, str] = {}
         if user_input is not None:
             offset = round(user_input[CONF_MEASURED_DEPTH] - water_column, 1)
             low, high = DEPTH_OFFSET_RANGE
-            if reported != self._shown_report:
+            if report != self._shown_report:
                 errors["base"] = "new_report"
             elif low <= offset <= high:
                 return self.async_create_entry(
@@ -259,7 +268,7 @@ class PTLevelOptionsFlow(OptionsFlowWithReload):
             else:
                 errors[CONF_MEASURED_DEPTH] = "implausible_depth"
 
-        self._shown_report = reported
+        self._shown_report = report
         return self.async_show_form(
             step_id="calibrate",
             data_schema=CALIBRATE_SCHEMA,
@@ -270,12 +279,21 @@ class PTLevelOptionsFlow(OptionsFlowWithReload):
             },
         )
 
-    def _loaded_data(self) -> PTLevelData | None:
-        """Return the entry's latest coordinator snapshot, or ``None`` if not loaded."""
+    async def _fresh_data(self) -> PTLevelData | None:
+        """Read the receiver now and return the entry's updated snapshot.
+
+        ``None`` when the entry is not loaded, or when the receiver does not
+        answer: the coordinator would otherwise still hold its last good
+        snapshot, which calibration must not mistake for a current reading.
+        """
         entry = self.config_entry
         if entry.state is not ConfigEntryState.LOADED:
             return None
-        return entry.runtime_data.data
+        coordinator: PTLevelCoordinator = entry.runtime_data
+        await coordinator.async_refresh()
+        if not coordinator.last_update_success:
+            return None
+        return coordinator.data
 
 
 def _normalize_host(text: str) -> str | None:

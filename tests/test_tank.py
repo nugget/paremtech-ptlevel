@@ -8,11 +8,31 @@ from custom_components.paremtech_ptlevel.const import (
     CONF_DEPTH_OFFSET,
     CONF_FULL_DEPTH,
 )
-from custom_components.paremtech_ptlevel.tank import TankSettings
+from custom_components.paremtech_ptlevel.tank import (
+    PERCENT_FULL,
+    WATER_DEPTH,
+    TankSettings,
+    tank_sensor_keys,
+)
 
 
 class TankSettingsFromOptionsTest(unittest.TestCase):
     """Reading tank settings out of an entry's options."""
+
+    def test_sensor_keys(self) -> None:
+        """An offset provides water depth; a full depth adds the percentage."""
+        cases = [
+            ({}, set()),
+            ({CONF_FULL_DEPTH: 104.5}, set()),
+            ({CONF_DEPTH_OFFSET: 5.2}, {WATER_DEPTH}),
+            (
+                {CONF_DEPTH_OFFSET: 5.2, CONF_FULL_DEPTH: 104.5},
+                {WATER_DEPTH, PERCENT_FULL},
+            ),
+        ]
+        for options, expected in cases:
+            with self.subTest(options=options):
+                self.assertEqual(tank_sensor_keys(options), expected)
 
     def test_options(self) -> None:
         """Only a saved depth offset makes a tank; the full depth is optional."""

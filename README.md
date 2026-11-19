@@ -100,12 +100,16 @@ Water depth and percent full come from two settings per receiver, under
    fresh report, then straight away measure the water from the tank floor to
    the surface, while no water is being drawn or pumped in. The level can move
    by up to about 10% without the transmitter reporting, so measure against a
-   fresh report rather than an old one. Open **Calibrate**, check that the
-   report time it shows is the one from just before you measured, and enter
-   the depth. The integration stores the difference from that report's water
-   column as the **depth offset**, which is usually about 4–8 inches, and
-   **Water depth** appears. If the transmitter reports again while the form is
-   open, it asks you to check the new reading instead of quietly using it.
+   fresh report rather than an old one. Only then open **Calibrate**: it reads
+   the receiver as it opens. Home Assistant times a report when it first sees
+   it, so check that the report time shown is no earlier than your button
+   press; if it is earlier, the new report has not arrived yet, so close the
+   form and open it again in a minute. Enter the depth. The integration stores
+   the difference from that report's water column as the **depth offset**,
+   which is usually about 4–8 inches, and **Water depth** appears. If the
+   transmitter reports again while the form is open, it asks you to check the
+   new reading instead of quietly using it. If the receiver does not answer,
+   calibration stops rather than using an old reading.
 2. **Tank settings.** Set the **full depth**: the water depth that counts as
    100%. Where a fill pump stops at a set level, use that level; otherwise use
    the overflow. **Percent full** appears. Clear the full depth to remove only
