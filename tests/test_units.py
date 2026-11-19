@@ -8,8 +8,8 @@ from homeassistant.util.unit_system import METRIC_SYSTEM, US_CUSTOMARY_SYSTEM
 
 from custom_components.paremtech_ptlevel.units import (
     format_length,
+    inches_to_field,
     length_unit,
-    to_field,
     to_inches,
 )
 
@@ -46,7 +46,7 @@ class LengthTest(unittest.TestCase):
         ]
         for unit, inches, shown in cases:
             with self.subTest(unit=unit, inches=inches):
-                self.assertEqual(to_field(inches, unit), shown)
+                self.assertEqual(inches_to_field(inches, unit), shown)
 
     def test_display_text_rounds_per_unit(self) -> None:
         """Whole millimetres, tenths of an inch, and never a minus zero."""

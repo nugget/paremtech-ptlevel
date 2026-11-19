@@ -46,7 +46,7 @@ def to_inches(value: float, unit: str) -> float:
     return round(DistanceConverter.convert(value, unit, UnitOfLength.INCHES), 4)
 
 
-def to_field(inches: float, unit: str) -> float:
+def inches_to_field(inches: float, unit: str) -> float:
     """Convert a length in inches to a form field's bound or prefill in ``unit``."""
     converted = DistanceConverter.convert(inches, UnitOfLength.INCHES, unit)
     return round(converted, FIELD_DECIMALS)

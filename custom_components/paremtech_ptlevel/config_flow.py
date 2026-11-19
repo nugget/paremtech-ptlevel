@@ -34,7 +34,7 @@ from .ptlevel import (
     PTLevelUnsupportedError,
     ReceiverStatus,
 )
-from .units import displayed, format_length, length_unit, to_field, to_inches
+from .units import displayed, format_length, inches_to_field, length_unit, to_inches
 
 if TYPE_CHECKING:
     from datetime import datetime
@@ -50,7 +50,7 @@ _LOGGER = logging.getLogger(__name__)
 MAX_DEPTH = 600.0
 """Deepest water depth the forms accept, in inches (50 ft)."""
 
-TANK_RANGES: dict[str, tuple[float, float]] = {
+TANK_LENGTH_RANGES: dict[str, tuple[float, float]] = {
     CONF_DEPTH_OFFSET: DEPTH_OFFSET_RANGE,
     CONF_FULL_DEPTH: (1.0, MAX_DEPTH),
 }
@@ -65,8 +65,8 @@ def _length_field(unit: str, low: float, high: float) -> NumberSelector:
     """
     return NumberSelector(
         NumberSelectorConfig(
-            min=to_field(low, unit),
-            max=to_field(high, unit),
+            min=inches_to_field(low, unit),
+            max=inches_to_field(high, unit),
             step="any",
             unit_of_measurement=unit,
             mode=NumberSelectorMode.BOX,
@@ -84,8 +84,8 @@ def _tank_schema(unit: str) -> probatio.Schema:
     """
     return probatio.Schema(
         {
-            probatio.Optional(key): _length_field(unit, *TANK_RANGES[key])
-            for key in TANK_RANGES
+            probatio.Optional(key): _length_field(unit, *TANK_LENGTH_RANGES[key])
+            for key in TANK_LENGTH_RANGES
         }
     )
 
@@ -237,14 +237,16 @@ class PTLevelOptionsFlow(OptionsFlowWithReload):
         if user_input is not None:
             options = {
                 key: to_inches(value, unit)
-                for key in TANK_RANGES
+                for key in TANK_LENGTH_RANGES
                 if (value := user_input.get(key)) is not None
             }
             return self.async_create_entry(data=options)
 
         saved = self.config_entry.options
         suggested = {
-            key: to_field(saved[key], unit) for key in TANK_RANGES if key in saved
+            key: inches_to_field(saved[key], unit)
+            for key in TANK_LENGTH_RANGES
+            if key in saved
         }
         return self.async_show_form(
             step_id="tank",
@@ -349,7 +351,7 @@ class PTLevelOptionsFlow(OptionsFlowWithReload):
         suggested = user_input
         if suggested is None and self._pending is not None:
             suggested = {
-                CONF_MEASURED_DEPTH: to_field(self._pending.measured_depth, unit)
+                CONF_MEASURED_DEPTH: inches_to_field(self._pending.measured_depth, unit)
             }
         return self.async_show_form(
             step_id="calibrate",
