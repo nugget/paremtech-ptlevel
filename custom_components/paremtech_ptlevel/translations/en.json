@@ -124,7 +124,8 @@
       "implausible_depth": "That measurement is too far from the reading to be right. Check the measurement, and that the transmitter has reported since the chamber went in."
     },
     "abort": {
-      "no_reading": "There is no water column to calibrate against yet. Wait for the transmitter to report, or press its button, then try again."
+      "no_reading": "There is no water column to calibrate against yet. Wait for the transmitter to report, or press its button, then try again.",
+      "unverified_scale": "This transmitter's hardware has no verified pressure scale, so there is no water column to calibrate against. Water depth and percent full need transmitter hardware 16."
     }
   }
 }

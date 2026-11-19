@@ -106,7 +106,9 @@ Water depth and percent full come from two settings per receiver, under
    the overflow. **Percent full** appears. Clear the full depth to remove it.
 
 You can also type a known depth offset in **Tank settings** instead of
-calibrating. Both values are in inches. Tank volume is still to come.
+calibrating. Both values are in inches. Like the water column, tank level
+needs transmitter hardware 16; for other hardware, calibration explains that it
+is unavailable. Tank volume is still to come.
 
 ### How freshness works
 

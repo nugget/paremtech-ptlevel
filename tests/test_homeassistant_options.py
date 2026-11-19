@@ -170,3 +170,16 @@ async def test_calibrate_needs_a_reading(
 
     assert result.get("type") is FlowResultType.ABORT
     assert result.get("reason") == "no_reading"
+
+
+async def test_calibrate_explains_an_unverified_scale(
+    hass: HomeAssistant, receiver: FakeReceiver
+) -> None:
+    """Older transmitter hardware reports, but has no water column to calibrate."""
+    receiver.payload = dict(load_payload("config_reading"), tx_hardware_version="5")
+    entry = await _setup(hass, {})
+
+    result = await _open(hass, entry, "calibrate")
+
+    assert result.get("type") is FlowResultType.ABORT
+    assert result.get("reason") == "unverified_scale"

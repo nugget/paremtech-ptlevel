@@ -34,9 +34,9 @@ from .ptlevel import (
 )
 
 if TYPE_CHECKING:
-    from datetime import datetime
-
     from homeassistant.config_entries import ConfigEntry, ConfigFlowResult
+
+    from .coordinator import PTLevelData
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -202,11 +202,18 @@ class PTLevelOptionsFlow(OptionsFlowWithReload):
         the measurement has to be taken before the transmitter reports again.
         A result outside ``DEPTH_OFFSET_RANGE`` is refused as a mistake. The
         full depth, if set, is kept.
+
+        The step aborts with ``no_reading`` until a report has been seen, and
+        with ``unverified_scale`` for transmitter hardware whose pressure
+        scale is unverified: that has no water column at all, so waiting for
+        another report would not help.
         """
-        current = self._current_water_column()
-        if current is None:
+        data = self._loaded_data()
+        if data is None or data.reading is None or data.last_report is None:
             return self.async_abort(reason="no_reading")
-        water_column, reported = current
+        if (water_column := data.reading.water_column_inches) is None:
+            return self.async_abort(reason="unverified_scale")
+        reported = data.last_report
 
         errors: dict[str, str] = {}
         if user_input is not None:
@@ -228,21 +235,12 @@ class PTLevelOptionsFlow(OptionsFlowWithReload):
             },
         )
 
-    def _current_water_column(self) -> tuple[float, datetime] | None:
-        """Return the loaded entry's water column and when it was reported.
-
-        ``None`` when the entry is not loaded, the transmitter has not
-        reported, or its hardware has no verified scale.
-        """
+    def _loaded_data(self) -> PTLevelData | None:
+        """Return the entry's latest coordinator snapshot, or ``None`` if not loaded."""
         entry = self.config_entry
         if entry.state is not ConfigEntryState.LOADED:
             return None
-        data = entry.runtime_data.data
-        if data.reading is None or data.last_report is None:
-            return None
-        if (water_column := data.reading.water_column_inches) is None:
-            return None
-        return water_column, data.last_report
+        return entry.runtime_data.data
 
 
 def _normalize_host(text: str) -> str | None:
