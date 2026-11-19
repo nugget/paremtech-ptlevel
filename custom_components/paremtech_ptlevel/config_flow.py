@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 import probatio
@@ -176,12 +177,17 @@ class PTLevelOptionsFlow(OptionsFlowWithReload):
     percentage entities appear or go away with their settings.
     """
 
-    _shown_report: tuple[datetime, TransmitterReading] | None = None
-    """The report the calibrate form last showed, to catch one arriving meanwhile.
+    _baseline: tuple[datetime, TransmitterReading] | None = None
+    """The report the receiver held when the calibrate form first opened.
 
-    It is identified by its reading as well as its time, because two reports
-    can be stamped with the same time (as under a frozen test clock).
+    Calibration uses the first report that differs from it: the one the
+    owner's button press sends after opening the form. A report is identified
+    by its reading as well as its time, because two can share a time (as under
+    a frozen test clock).
     """
+
+    _pending: _Calibration | None = None
+    """A calibration computed from a new report, waiting for confirmation."""
 
     async def async_step_init(
         self,
@@ -217,83 +223,175 @@ class PTLevelOptionsFlow(OptionsFlowWithReload):
     async def async_step_calibrate(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Set the depth offset from a measured water depth.
+        """Set the depth offset from a depth measured against a fresh report.
 
-        The offset is the measured depth minus the water column of the report
-        the form showed, so the owner measures right after a fresh report. The
-        receiver is read afresh each time the form is shown or submitted, so
-        the step never works from a poll up to a minute old. If another report
-        arrives while the form is open, the submission is refused with
-        ``new_report`` and the form shows the new reading rather than silently
-        using a value the owner never saw. A result outside
-        ``DEPTH_OFFSET_RANGE`` is refused as a mistake. The full depth, if set,
-        is kept.
+        The owner opens the form, presses the transmitter's button and
+        measures. The report the receiver held when the form opened is the
+        baseline, and a submission is accepted only once a different report
+        has arrived (``no_new_report`` until then), so the offset is always
+        the measured depth minus the water column of a report sent after the
+        form opened, never an older one with an ambiguous time. The receiver
+        is read afresh on every show and submit, rather than relying on a poll
+        up to a minute old. The new report and the resulting offset are then
+        shown for confirmation, where the owner can save or go back to correct
+        the depth without pressing the button again.
 
-        The step aborts, each with its own explanation, when the entry is not
-        loaded or the receiver does not answer (``not_loaded``), before any
-        report (``no_reading``), for transmitter hardware without a verified
-        scale (``unverified_scale``), and when the water column, at the one
-        decimal the owner sees, is under ``MIN_CALIBRATION_WATER_COLUMN``
-        (``low_reading``), which looks the same as a chamber out of the water
-        or a leaking air tube. Comparing the shown value means a refused
-        reading never displays as 1.0 in.
+        A submission is also refused when the new report's water column, at
+        the one decimal the owner sees, is under ``MIN_CALIBRATION_WATER_COLUMN``
+        (``low_reading``, which looks like a chamber out of the water or a
+        leaking tube), or when the offset falls outside ``DEPTH_OFFSET_RANGE``
+        (``implausible_depth``). If the receiver does not answer once the
+        procedure has started, the form comes back with ``cannot_read`` and
+        keeps the baseline, so the owner's button press still counts. The form
+        always keeps the depth the owner typed.
+
+        The step aborts when the entry is not loaded or the receiver does not
+        answer when the form first opens (``not_loaded``), before any report
+        (``no_reading``), and for transmitter hardware without a verified scale
+        (``unverified_scale``). The full depth, if set, is kept.
         """
-        data = await self._fresh_data()
-        if data is None:
+        read = await self._read_receiver()
+        if read is None or (not read.answered and self._baseline is None):
             return self.async_abort(reason="not_loaded")
+        data = read.data
         if data.reading is None or data.last_report is None:
             return self.async_abort(reason="no_reading")
         if (water_column := data.reading.water_column_inches) is None:
             return self.async_abort(reason="unverified_scale")
-        # A negative column shows as 0.0, never -0.0 or a negative depth.
-        shown_column = round(water_column, 1) if water_column > 0 else 0.0
-        if shown_column < MIN_CALIBRATION_WATER_COLUMN:
-            return self.async_abort(
-                reason="low_reading",
-                description_placeholders={"water_column": f"{shown_column:.1f}"},
+        if not read.answered:
+            return self._show_calibrate(
+                water_column, data.last_report, user_input, {"base": "cannot_read"}
             )
-        reported = data.last_report
-        report = (reported, data.reading)
+        report = (data.last_report, data.reading)
+        if self._baseline is None:
+            self._baseline = report
 
         errors: dict[str, str] = {}
         if user_input is not None:
-            offset = round(user_input[CONF_MEASURED_DEPTH] - water_column, 1)
+            measured_depth = user_input[CONF_MEASURED_DEPTH]
+            offset = round(measured_depth - water_column, 1)
             low, high = DEPTH_OFFSET_RANGE
-            if report != self._shown_report:
-                errors["base"] = "new_report"
-            elif low <= offset <= high:
-                return self.async_create_entry(
-                    data={**self.config_entry.options, CONF_DEPTH_OFFSET: offset}
-                )
-            else:
+            if report == self._baseline:
+                errors["base"] = "no_new_report"
+            elif _shown(water_column) < MIN_CALIBRATION_WATER_COLUMN:
+                errors["base"] = "low_reading"
+            elif not low <= offset <= high:
                 errors[CONF_MEASURED_DEPTH] = "implausible_depth"
+            else:
+                self._pending = _Calibration(
+                    water_column=water_column,
+                    reported=data.last_report,
+                    measured_depth=measured_depth,
+                    offset=offset,
+                )
+                return await self.async_step_calibrate_confirm()
 
-        self._shown_report = report
+        return self._show_calibrate(water_column, data.last_report, user_input, errors)
+
+    def _show_calibrate(
+        self,
+        water_column: float,
+        reported: datetime,
+        user_input: dict[str, Any] | None,
+        errors: dict[str, str],
+    ) -> ConfigFlowResult:
+        """Show the calibrate form, keeping whatever depth the owner last gave.
+
+        On a re-show after an error that is the owner's submission; coming
+        back from the confirmation it is the depth they confirmed.
+        """
+        suggested = user_input
+        if suggested is None and self._pending is not None:
+            suggested = {CONF_MEASURED_DEPTH: self._pending.measured_depth}
         return self.async_show_form(
             step_id="calibrate",
-            data_schema=CALIBRATE_SCHEMA,
+            data_schema=self.add_suggested_values_to_schema(
+                CALIBRATE_SCHEMA, suggested
+            ),
             errors=errors,
             description_placeholders={
-                "water_column": f"{water_column:.1f}",
-                "reported": dt_util.as_local(reported).strftime("%Y-%m-%d %H:%M"),
+                "water_column": f"{_shown(water_column):.1f}",
+                "reported": _when(reported),
             },
         )
 
-    async def _fresh_data(self) -> PTLevelData | None:
-        """Read the receiver now and return the entry's updated snapshot.
+    async def async_step_calibrate_confirm(
+        self,
+        user_input: dict[str, Any] | None = None,  # noqa: ARG002
+    ) -> ConfigFlowResult:
+        """Show the report and offset a calibration will use, to save or change."""
+        if (pending := self._pending) is None:
+            return await self.async_step_calibrate()
+        return self.async_show_menu(
+            step_id="calibrate_confirm",
+            menu_options=["calibrate_save", "calibrate"],
+            description_placeholders={
+                "water_column": f"{_shown(pending.water_column):.1f}",
+                "reported": _when(pending.reported),
+                "measured_depth": f"{pending.measured_depth:.1f}",
+                "offset": f"{pending.offset:.1f}",
+            },
+        )
 
-        ``None`` when the entry is not loaded, or when the receiver does not
-        answer: the coordinator would otherwise still hold its last good
-        snapshot, which calibration must not mistake for a current reading.
+    async def async_step_calibrate_save(
+        self,
+        user_input: dict[str, Any] | None = None,  # noqa: ARG002
+    ) -> ConfigFlowResult:
+        """Save the confirmed depth offset, keeping the full depth."""
+        if (pending := self._pending) is None:
+            return await self.async_step_calibrate()
+        return self.async_create_entry(
+            data={**self.config_entry.options, CONF_DEPTH_OFFSET: pending.offset}
+        )
+
+    async def _read_receiver(self) -> _Read | None:
+        """Read the receiver now and return the entry's snapshot.
+
+        ``None`` when the entry is not loaded, before or after the read: it
+        can unload or reload meanwhile, and a refresh skipped after shutdown
+        leaves ``last_update_success`` as it was. Otherwise the snapshot comes
+        with whether the receiver answered just now; when it did not, the
+        snapshot is the coordinator's last good one, which calibration must
+        not mistake for a current reading.
         """
         entry = self.config_entry
         if entry.state is not ConfigEntryState.LOADED:
             return None
         coordinator: PTLevelCoordinator = entry.runtime_data
         await coordinator.async_refresh()
-        if not coordinator.last_update_success:
+        if entry.state is not ConfigEntryState.LOADED:
             return None
-        return coordinator.data
+        if entry.runtime_data is not coordinator:
+            return None
+        return _Read(data=coordinator.data, answered=coordinator.last_update_success)
+
+
+@dataclass(frozen=True, slots=True)
+class _Calibration:
+    """A calibration computed from a new report, waiting for confirmation."""
+
+    water_column: float
+    reported: datetime
+    measured_depth: float
+    offset: float
+
+
+@dataclass(frozen=True, slots=True)
+class _Read:
+    """The result of reading the receiver for calibration."""
+
+    data: PTLevelData
+    answered: bool
+
+
+def _shown(water_column: float) -> float:
+    """Return the water column as the owner sees it: one decimal, never negative."""
+    return round(water_column, 1) if water_column > 0 else 0.0
+
+
+def _when(moment: datetime) -> str:
+    """Return a report time in local time, to the second."""
+    return dt_util.as_local(moment).strftime("%Y-%m-%d %H:%M:%S")
 
 
 def _normalize_host(text: str) -> str | None:

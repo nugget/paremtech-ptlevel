@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from conftest import load_payload
@@ -36,6 +37,7 @@ if TYPE_CHECKING:
 RECEIVER_ID = "4022D8000001"
 START = datetime(2026, 11, 5, 16, 42, tzinfo=UTC)
 pytestmark = pytest.mark.usefixtures("enable_custom_integrations", "receiver")
+SAVE = {"next_step_id": "calibrate_save"}
 
 
 def _entry(hass: HomeAssistant, options: dict[str, Any]) -> MockConfigEntry:
@@ -194,10 +196,24 @@ async def test_tank_form_prefills_saved_settings(
     assert _suggested(result) == expected
 
 
-async def test_calibrate_sets_offset_and_keeps_full_depth(
-    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+def _press(receiver: FakeReceiver, raw: int = 34236) -> None:
+    """Have the transmitter send a new report, as its button does."""
+    receiver.set_reading(raw, tx_rssi="-118")
+
+
+@pytest.mark.parametrize("polled", [True, False])
+async def test_calibrate_uses_the_report_sent_after_opening(
+    hass: HomeAssistant,
+    receiver: FakeReceiver,
+    freezer: FrozenDateTimeFactory,
+    polled: bool,
 ) -> None:
-    """A measured depth becomes the offset against the current water column."""
+    """The offset comes from the button's report, confirmed before saving.
+
+    Without a scheduled poll in between, the submission itself reads the
+    receiver and finds the report; the clock stays frozen, so the report is
+    recognized by its reading, not its time.
+    """
     freezer.move_to(START)
     entry = await _setup(hass, {CONF_DEPTH_OFFSET: 0.0, CONF_FULL_DEPTH: 104.5})
 
@@ -205,63 +221,70 @@ async def test_calibrate_sets_offset_and_keeps_full_depth(
     assert result.get("type") is FlowResultType.FORM
     placeholders = result.get("description_placeholders") or {}
     assert placeholders.get("water_column") == "96.2"
-    assert placeholders.get("reported")
+    assert placeholders.get("reported", "").count(":") == 2
 
-    result = await _submit(hass, result, {CONF_MEASURED_DEPTH: 104.5})
-
-    assert result.get("type") is FlowResultType.CREATE_ENTRY
-    assert entry.options == {CONF_DEPTH_OFFSET: 8.3, CONF_FULL_DEPTH: 104.5}
-    assert _state(hass, "water_depth") == "104.49"
-    assert _state(hass, "percent_full") == "100.0"
-
-
-async def test_calibrate_refuses_an_implausible_depth(hass: HomeAssistant) -> None:
-    """A depth that would put the chamber far off is refused, then corrected."""
-    entry = await _setup(hass, {})
-
-    result = await _open(hass, entry, "calibrate")
-    result = await _submit(hass, result, {CONF_MEASURED_DEPTH: 10.0})
-    assert result.get("type") is FlowResultType.FORM
-    assert result.get("errors") == {CONF_MEASURED_DEPTH: "implausible_depth"}
-    assert entry.options == {}
-
-    result = await _submit(hass, result, {CONF_MEASURED_DEPTH: 100.0})
-    assert result.get("type") is FlowResultType.CREATE_ENTRY
-    assert entry.options == {CONF_DEPTH_OFFSET: 3.8}
-
-
-@pytest.mark.parametrize("polled", [True, False])
-async def test_calibrate_refuses_a_report_that_arrived_while_open(
-    hass: HomeAssistant,
-    receiver: FakeReceiver,
-    freezer: FrozenDateTimeFactory,
-    polled: bool,
-) -> None:
-    """A newer report than the one shown is not used until the owner sees it.
-
-    Without a scheduled poll in between, the submission itself reads the
-    receiver and finds the report; the clock stays frozen, so the report is
-    recognized by its reading, not its time.
-    """
-    freezer.move_to(START)
-    entry = await _setup(hass, {})
-    result = await _open(hass, entry, "calibrate")
-
-    receiver.set_reading(33000, tx_rssi="-121")
+    _press(receiver, 33000)
     if polled:
         freezer.tick(SCAN_INTERVAL)
         async_fire_time_changed(hass)
         await hass.async_block_till_done()
+    result = await _submit(hass, result, {CONF_MEASURED_DEPTH: 96.0})
+
+    assert result.get("type") is FlowResultType.MENU
+    assert result.get("step_id") == "calibrate_confirm"
+    assert result.get("menu_options") == ["calibrate_save", "calibrate"]
+    placeholders = result.get("description_placeholders") or {}
+    assert placeholders.get("water_column") == "91.2"
+    assert placeholders.get("measured_depth") == "96.0"
+    assert placeholders.get("offset") == "4.8"
+    assert entry.options == {CONF_DEPTH_OFFSET: 0.0, CONF_FULL_DEPTH: 104.5}
+
+    result = await _submit(hass, result, SAVE)
+
+    assert result.get("type") is FlowResultType.CREATE_ENTRY
+    assert entry.options == {CONF_DEPTH_OFFSET: 4.8, CONF_FULL_DEPTH: 104.5}
+    assert _state(hass, "water_depth") == "96.03"
+    assert _state(hass, "percent_full") == "91.9"
+
+
+async def test_calibrate_refuses_until_the_button_report(
+    hass: HomeAssistant, receiver: FakeReceiver
+) -> None:
+    """The report the receiver held when the form opened is never used."""
+    entry = await _setup(hass, {})
+    result = await _open(hass, entry, "calibrate")
+    assert _suggested(result) == {CONF_MEASURED_DEPTH: None}
 
     result = await _submit(hass, result, {CONF_MEASURED_DEPTH: 104.5})
     assert result.get("type") is FlowResultType.FORM
-    assert result.get("errors") == {"base": "new_report"}
-    assert (result.get("description_placeholders") or {}).get("water_column") == "91.2"
+    assert result.get("step_id") == "calibrate"
+    assert result.get("errors") == {"base": "no_new_report"}
+    assert _suggested(result) == {CONF_MEASURED_DEPTH: 104.5}
+
+    _press(receiver)
+    result = await _submit(hass, result, {CONF_MEASURED_DEPTH: 104.5})
+    assert result.get("step_id") == "calibrate_confirm"
+    assert (result.get("description_placeholders") or {}).get("offset") == "8.3"
     assert entry.options == {}
 
-    result = await _submit(hass, result, {CONF_MEASURED_DEPTH: 96.0})
+
+async def test_calibrate_refuses_an_implausible_depth(
+    hass: HomeAssistant, receiver: FakeReceiver
+) -> None:
+    """A depth that would put the chamber far off is refused, then corrected."""
+    entry = await _setup(hass, {})
+    result = await _open(hass, entry, "calibrate")
+    _press(receiver)
+
+    result = await _submit(hass, result, {CONF_MEASURED_DEPTH: 10.0})
+    assert result.get("type") is FlowResultType.FORM
+    assert result.get("errors") == {CONF_MEASURED_DEPTH: "implausible_depth"}
+
+    result = await _submit(hass, result, {CONF_MEASURED_DEPTH: 100.0})
+    assert result.get("step_id") == "calibrate_confirm"
+    result = await _submit(hass, result, SAVE)
     assert result.get("type") is FlowResultType.CREATE_ENTRY
-    assert entry.options == {CONF_DEPTH_OFFSET: 4.8}
+    assert entry.options == {CONF_DEPTH_OFFSET: 3.8}
 
 
 @pytest.mark.parametrize(
@@ -272,31 +295,61 @@ async def test_calibrate_refuses_a_report_that_arrived_while_open(
         (10271, "0.0"),  # -0.02 in: no pressure at all
     ],
 )
-async def test_calibrate_refuses_a_near_zero_reading(
+async def test_calibrate_refuses_a_near_zero_report(
     hass: HomeAssistant, receiver: FakeReceiver, raw: int, shown: str
 ) -> None:
-    """A water column under an inch could be a dry chamber or a leak."""
-    receiver.set_reading(raw)
+    """A new report under an inch could be a dry chamber or a leak."""
     entry = await _setup(hass, {})
-
     result = await _open(hass, entry, "calibrate")
+    _press(receiver, raw)
 
-    assert result.get("type") is FlowResultType.ABORT
-    assert result.get("reason") == "low_reading"
+    result = await _submit(hass, result, {CONF_MEASURED_DEPTH: 50.0})
+
+    assert result.get("type") is FlowResultType.FORM
+    assert result.get("errors") == {"base": "low_reading"}
     assert (result.get("description_placeholders") or {}).get("water_column") == shown
+    assert entry.options == {}
 
 
-async def test_calibrate_accepts_a_reading_shown_as_one_inch(
+async def test_calibrate_accepts_a_report_shown_as_one_inch(
     hass: HomeAssistant, receiver: FakeReceiver
 ) -> None:
     """A column that rounds to 1.0 in, as the owner sees it, can be calibrated."""
-    receiver.set_reading(10518)  # 0.97 in
     entry = await _setup(hass, {})
-
     result = await _open(hass, entry, "calibrate")
+    _press(receiver, 10518)  # 0.97 in
 
-    assert result.get("type") is FlowResultType.FORM
-    assert (result.get("description_placeholders") or {}).get("water_column") == "1.0"
+    result = await _submit(hass, result, {CONF_MEASURED_DEPTH: 5.0})
+
+    assert result.get("step_id") == "calibrate_confirm"
+    placeholders = result.get("description_placeholders") or {}
+    assert placeholders.get("water_column") == "1.0"
+    assert placeholders.get("offset") == "4.0"
+
+
+@pytest.mark.parametrize("change", ["unloaded", "reloaded"])
+async def test_calibrate_stops_if_the_entry_changes_during_the_read(
+    hass: HomeAssistant, change: str
+) -> None:
+    """A read that ends with the entry unloaded or reloaded is not trusted."""
+    entry = await _setup(hass, {})
+    coordinator = entry.runtime_data
+
+    async def refresh_then_change() -> None:
+        if change == "unloaded":
+            entry.mock_state(hass, ConfigEntryState.NOT_LOADED)
+        else:
+            entry.runtime_data = object()
+
+    with patch.object(
+        coordinator, "async_refresh", AsyncMock(side_effect=refresh_then_change)
+    ):
+        result = await _open(hass, entry, "calibrate")
+
+    assert result.get("type") is FlowResultType.ABORT
+    assert result.get("reason") == "not_loaded"
+    entry.mock_state(hass, ConfigEntryState.LOADED)
+    entry.runtime_data = coordinator
 
 
 async def test_calibrate_needs_a_loaded_entry(
@@ -329,19 +382,46 @@ async def test_calibrate_stops_when_a_loaded_receiver_stops_answering(
     assert result.get("reason") == "not_loaded"
 
 
-async def test_calibrate_stops_when_the_receiver_drops_before_submit(
+async def test_calibrate_keeps_the_press_when_a_read_fails(
     hass: HomeAssistant, receiver: FakeReceiver
 ) -> None:
-    """The submission reads the receiver too, and stops if it has gone quiet."""
+    """A missed read after the form opened asks for a resubmit, keeping the press."""
     entry = await _setup(hass, {})
     result = await _open(hass, entry, "calibrate")
+    _press(receiver)
     receiver.error = PTLevelConnectionError("refused")
 
     result = await _submit(hass, result, {CONF_MEASURED_DEPTH: 104.5})
+    assert result.get("type") is FlowResultType.FORM
+    assert result.get("errors") == {"base": "cannot_read"}
+    assert _suggested(result) == {CONF_MEASURED_DEPTH: 104.5}
 
-    assert result.get("type") is FlowResultType.ABORT
-    assert result.get("reason") == "not_loaded"
+    receiver.error = None
+    result = await _submit(hass, result, {CONF_MEASURED_DEPTH: 104.5})
+    assert result.get("step_id") == "calibrate_confirm"
     assert entry.options == {}
+
+
+async def test_calibrate_can_correct_the_depth_without_a_new_press(
+    hass: HomeAssistant, receiver: FakeReceiver
+) -> None:
+    """Going back from the confirmation keeps the button report and the depth."""
+    entry = await _setup(hass, {})
+    result = await _open(hass, entry, "calibrate")
+    _press(receiver)
+    result = await _submit(hass, result, {CONF_MEASURED_DEPTH: 104.5})
+    assert (result.get("description_placeholders") or {}).get("offset") == "8.3"
+
+    result = await _submit(hass, result, {"next_step_id": "calibrate"})
+    assert result.get("type") is FlowResultType.FORM
+    assert result.get("errors") == {}
+    assert _suggested(result) == {CONF_MEASURED_DEPTH: 104.5}
+
+    result = await _submit(hass, result, {CONF_MEASURED_DEPTH: 105.0})
+    assert (result.get("description_placeholders") or {}).get("offset") == "8.8"
+    result = await _submit(hass, result, SAVE)
+    assert result.get("type") is FlowResultType.CREATE_ENTRY
+    assert entry.options == {CONF_DEPTH_OFFSET: 8.8}
 
 
 async def test_clearing_settings_offline_still_removes_tank_sensors(
