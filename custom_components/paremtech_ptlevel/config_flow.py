@@ -54,6 +54,17 @@ MAX_DEPTH = 600.0
 MAX_CAPACITY = 1_000_000.0
 """Largest tank capacity the forms accept, in US gallons."""
 
+TANK_RANGES: dict[str, tuple[float, float]] = {
+    CONF_DEPTH_OFFSET: DEPTH_OFFSET_RANGE,
+    CONF_FULL_DEPTH: (1.0, MAX_DEPTH),
+    CONF_CAPACITY: (1.0, MAX_CAPACITY),
+}
+"""Each tank setting's accepted range, in its stored unit (inches or US gallons).
+
+The form's field bounds and the clamping of its prefilled values both come
+from here, so they cannot drift apart.
+"""
+
 
 def _tank_units(system: UnitSystem) -> dict[str, FormUnit]:
     """Return the unit each tank setting is shown in for a unit system.
@@ -96,17 +107,21 @@ def _tank_schema(units: dict[str, FormUnit]) -> probatio.Schema:
     """
     return probatio.Schema(
         {
-            probatio.Optional(CONF_DEPTH_OFFSET): _unit_field(
-                units[CONF_DEPTH_OFFSET], *DEPTH_OFFSET_RANGE
-            ),
-            probatio.Optional(CONF_FULL_DEPTH): _unit_field(
-                units[CONF_FULL_DEPTH], 1.0, MAX_DEPTH
-            ),
-            probatio.Optional(CONF_CAPACITY): _unit_field(
-                units[CONF_CAPACITY], 1.0, MAX_CAPACITY
-            ),
+            probatio.Optional(key): _unit_field(units[key], *TANK_RANGES[key])
+            for key in TANK_RANGES
         }
     )
+
+
+def _prefill(units: FormUnit, value: float, valid: tuple[float, float]) -> float:
+    """Return a saved value as the form prefills it, inside the field's bounds.
+
+    Rounding to the shown unit can move a value at the very edge of its range
+    one step outside the field's bounds, which are rounded inward; the form
+    would then refuse to save unchanged. Clamping moves it at most one step.
+    """
+    low, high = units.bounds(*valid)
+    return min(max(units.from_stored(value), low), high)
 
 
 def _calibrate_schema(units: FormUnit) -> probatio.Schema:
@@ -255,7 +270,7 @@ class PTLevelOptionsFlow(OptionsFlowWithReload):
 
         saved = self.config_entry.options
         suggested = {
-            key: unit.from_stored(saved[key])
+            key: _prefill(unit, saved[key], TANK_RANGES[key])
             for key, unit in units.items()
             if key in saved
         }

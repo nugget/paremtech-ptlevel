@@ -700,3 +700,26 @@ async def test_capacity_in_litres_is_stored_in_gallons(hass: HomeAssistant) -> N
     assert entry.options[CONF_CAPACITY] == 4999.9844
     result = await _open(hass, entry, "tank")
     assert _suggested(result)[CONF_CAPACITY] == 18927.0
+
+
+async def test_tank_form_saves_unchanged_at_the_range_edges(
+    hass: HomeAssistant,
+) -> None:
+    """Values at the edges of their ranges prefill inside the metric bounds."""
+    entry = await _setup(
+        hass,
+        {CONF_DEPTH_OFFSET: -24.0, CONF_FULL_DEPTH: 1.0, CONF_CAPACITY: 1_000_000.0},
+        METRIC_SYSTEM,
+    )
+
+    result = await _open(hass, entry, "tank")
+    prefilled = _suggested(result)
+    assert prefilled == {
+        CONF_DEPTH_OFFSET: -609.0,
+        CONF_FULL_DEPTH: 26.0,
+        CONF_CAPACITY: 3_785_411.0,
+    }
+
+    result = await _submit(hass, result, prefilled)
+
+    assert result.get("type") is FlowResultType.CREATE_ENTRY
