@@ -289,7 +289,9 @@ class PTLevelTankSensorEntity(PTLevelEntity, SensorEntity):
     entry, which builds new entities. Volume sensors take their native unit
     from the unit system when they are built (litres or US gallons), so the
     state is a clean number in the unit most owners see; Home Assistant still
-    converts it for any other display unit an owner picks.
+    converts it for any other display unit an owner picks. A change of unit
+    system takes effect on the next reload or restart; until then Home
+    Assistant shows the old native unit converted, unrounded.
     """
 
     entity_description: PTLevelTankSensorEntityDescription

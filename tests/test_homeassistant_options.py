@@ -512,7 +512,13 @@ def _field(result: Any, key: str) -> dict[str, Any]:
     [
         (
             US_CUSTOMARY_SYSTEM,
-            {"unit": "in", "bounds": (-24.0, 60.0), "saved": (5.2, 104.5)},
+            {
+                "unit": "in",
+                "bounds": (-24.0, 60.0),
+                "saved": (5.2, 104.5),
+                "volume_unit": "gal",
+                "capacity_bounds": (1.0, 1_000_000.0),
+            },
         ),
         (
             METRIC_SYSTEM,
@@ -520,6 +526,8 @@ def _field(result: Any, key: str) -> dict[str, Any]:
                 "unit": "mm",
                 "bounds": (-609.6, 1524.0),
                 "saved": (132.08, 2654.3),
+                "volume_unit": "L",
+                "capacity_bounds": (3.79, 3_785_411.78),
             },
         ),
     ],
@@ -537,6 +545,10 @@ async def test_tank_form_uses_the_unit_system(
     assert (offset["min"], offset["max"]) == expected["bounds"]
     assert offset["step"] == "any"
     assert _field(result, CONF_FULL_DEPTH)["unit_of_measurement"] == expected["unit"]
+    capacity = _field(result, CONF_CAPACITY)
+    assert capacity["unit_of_measurement"] == expected["volume_unit"]
+    assert (capacity["min"], capacity["max"]) == expected["capacity_bounds"]
+    assert capacity["step"] == "any"
     assert _suggested(result) == {
         **dict(
             zip((CONF_DEPTH_OFFSET, CONF_FULL_DEPTH), expected["saved"], strict=True)
@@ -734,28 +746,40 @@ async def test_capacity_in_litres_is_stored_in_gallons(hass: HomeAssistant) -> N
     assert _suggested(result)[CONF_CAPACITY] == 18927.0
 
 
+@pytest.mark.parametrize(
+    ("stored", "prefills"),
+    [
+        (
+            {
+                CONF_DEPTH_OFFSET: -24.0,
+                CONF_FULL_DEPTH: 1.0,
+                CONF_CAPACITY: 1_000_000.0,
+            },
+            {
+                CONF_DEPTH_OFFSET: -609.6,
+                CONF_FULL_DEPTH: 25.4,
+                CONF_CAPACITY: 3_785_411.78,
+            },
+        ),
+        (
+            {CONF_DEPTH_OFFSET: 60.0, CONF_FULL_DEPTH: 600.0, CONF_CAPACITY: 1.0},
+            {CONF_DEPTH_OFFSET: 1524.0, CONF_FULL_DEPTH: 15240.0, CONF_CAPACITY: 3.79},
+        ),
+    ],
+)
 async def test_tank_form_saves_unchanged_at_the_range_edges(
-    hass: HomeAssistant,
+    hass: HomeAssistant, stored: dict[str, float], prefills: dict[str, float]
 ) -> None:
-    """Values at the edges of their ranges prefill exactly at the metric bounds."""
-    entry = await _setup(
-        hass,
-        {CONF_DEPTH_OFFSET: -24.0, CONF_FULL_DEPTH: 1.0, CONF_CAPACITY: 1_000_000.0},
-        METRIC_SYSTEM,
-    )
+    """Values at the edges of their ranges prefill at the metric bounds and keep."""
+    entry = await _setup(hass, stored, METRIC_SYSTEM)
 
     result = await _open(hass, entry, "tank")
-    prefilled = _suggested(result)
-    assert prefilled == {
-        CONF_DEPTH_OFFSET: -609.6,
-        CONF_FULL_DEPTH: 25.4,
-        CONF_CAPACITY: 3_785_411.78,
-    }
+    assert _suggested(result) == prefills
 
-    result = await _submit(hass, result, prefilled)
+    result = await _submit(hass, result, prefills)
 
     assert result.get("type") is FlowResultType.CREATE_ENTRY
-    assert entry.options == {CONF_DEPTH_OFFSET: -24.0, CONF_FULL_DEPTH: 1.0}
+    assert entry.options == stored
 
 
 async def test_unit_system_change_while_a_form_is_open(
@@ -797,8 +821,8 @@ async def test_capacity_is_read_in_the_units_its_form_showed(
 @pytest.mark.parametrize(
     ("system", "prefills", "new_full_depth"),
     [
-        (US_CUSTOMARY_SYSTEM, (4.77, 4999.98), 100.0),
-        (METRIC_SYSTEM, (121.21, 18927.0), 2540.0),
+        (US_CUSTOMARY_SYSTEM, (4.77, 4999.99), 100.0),
+        (METRIC_SYSTEM, (121.21, 18927.01), 2540.0),
     ],
 )
 async def test_untouched_settings_keep_their_precision(
@@ -810,7 +834,7 @@ async def test_untouched_settings_keep_their_precision(
     """Changing only the full depth leaves the offset and capacity exactly as stored."""
     entry = await _setup(
         hass,
-        {CONF_DEPTH_OFFSET: 4.7719, CONF_FULL_DEPTH: 104.5, CONF_CAPACITY: 4999.9844},
+        {CONF_DEPTH_OFFSET: 4.7719, CONF_FULL_DEPTH: 104.5, CONF_CAPACITY: 4999.9876},
         system,
     )
     offset, capacity = prefills
@@ -831,5 +855,5 @@ async def test_untouched_settings_keep_their_precision(
     assert entry.options == {
         CONF_DEPTH_OFFSET: 4.7719,
         CONF_FULL_DEPTH: 100.0,
-        CONF_CAPACITY: 4999.9844,
+        CONF_CAPACITY: 4999.9876,
     }

@@ -1,4 +1,4 @@
-"""Tests for the lengths the tank forms show and take."""
+"""Tests for the lengths and volumes the tank forms and sensors use."""
 
 from __future__ import annotations
 
