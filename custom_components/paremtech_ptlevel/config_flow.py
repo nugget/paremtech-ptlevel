@@ -7,11 +7,25 @@ from typing import TYPE_CHECKING, Any
 
 import probatio
 from homeassistant import config_entries
-from homeassistant.const import CONF_HOST
+from homeassistant.config_entries import ConfigEntryState, OptionsFlowWithReload
+from homeassistant.const import CONF_HOST, UnitOfLength
+from homeassistant.core import callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.selector import (
+    NumberSelector,
+    NumberSelectorConfig,
+    NumberSelectorMode,
+)
+from homeassistant.util import dt as dt_util
 from yarl import URL
 
-from .const import DOMAIN
+from .const import (
+    CONF_DEPTH_OFFSET,
+    CONF_FULL_DEPTH,
+    CONF_MEASURED_DEPTH,
+    DEPTH_OFFSET_RANGE,
+    DOMAIN,
+)
 from .ptlevel import (
     PTLevelClient,
     PTLevelConnectionError,
@@ -20,9 +34,38 @@ from .ptlevel import (
 )
 
 if TYPE_CHECKING:
-    from homeassistant.config_entries import ConfigFlowResult
+    from homeassistant.config_entries import ConfigEntry, ConfigFlowResult
+
+    from .coordinator import PTLevelData
 
 _LOGGER = logging.getLogger(__name__)
+
+MAX_DEPTH = 600.0
+"""Deepest water depth the forms accept, in inches (50 ft)."""
+
+
+def _inches(minimum: float, maximum: float) -> NumberSelector:
+    """Return a typed-in number field in inches, to a tenth of an inch."""
+    return NumberSelector(
+        NumberSelectorConfig(
+            min=minimum,
+            max=maximum,
+            step=0.1,
+            unit_of_measurement=UnitOfLength.INCHES,
+            mode=NumberSelectorMode.BOX,
+        )
+    )
+
+
+TANK_SCHEMA = probatio.Schema(
+    {
+        probatio.Required(CONF_DEPTH_OFFSET, default=0.0): _inches(*DEPTH_OFFSET_RANGE),
+        probatio.Optional(CONF_FULL_DEPTH): _inches(1.0, MAX_DEPTH),
+    }
+)
+CALIBRATE_SCHEMA = probatio.Schema(
+    {probatio.Required(CONF_MEASURED_DEPTH): _inches(0.0, MAX_DEPTH)}
+)
 
 
 class PTLevelConfigFlow(  # pyright: ignore[reportGeneralTypeIssues]
@@ -37,6 +80,12 @@ class PTLevelConfigFlow(  # pyright: ignore[reportGeneralTypeIssues]
     """
 
     VERSION = 1
+
+    @staticmethod
+    @callback
+    def async_get_options_flow(config_entry: ConfigEntry) -> PTLevelOptionsFlow:  # noqa: ARG004
+        """Return the flow that sets up the tank's depth and fill level."""
+        return PTLevelOptionsFlow()
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -105,6 +154,93 @@ class PTLevelConfigFlow(  # pyright: ignore[reportGeneralTypeIssues]
         except PTLevelUnsupportedError as err:
             _LOGGER.debug("PTLevel receiver at %s unsupported: %s", host, err)
             return None, "unsupported_receiver"
+
+
+class PTLevelOptionsFlow(OptionsFlowWithReload):
+    """Set up the tank's water depth and fill level.
+
+    Both routes write the same two options. *Calibrate* derives the depth
+    offset from a water depth measured by hand against the current reading,
+    which is how an owner normally finds it; *tank settings* edits the offset
+    and the full depth directly. Saving reloads the entry, so the depth and
+    percentage entities appear or go away with their settings.
+    """
+
+    async def async_step_init(
+        self,
+        user_input: dict[str, Any] | None = None,  # noqa: ARG002
+    ) -> ConfigFlowResult:
+        """Offer calibration or the tank settings."""
+        return self.async_show_menu(step_id="init", menu_options=["calibrate", "tank"])
+
+    async def async_step_tank(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Edit the depth offset and the full depth.
+
+        Leaving the full depth empty removes the percentage entity.
+        """
+        if user_input is not None:
+            options = {CONF_DEPTH_OFFSET: round(user_input[CONF_DEPTH_OFFSET], 1)}
+            if (full_depth := user_input.get(CONF_FULL_DEPTH)) is not None:
+                options[CONF_FULL_DEPTH] = round(full_depth, 1)
+            return self.async_create_entry(data=options)
+
+        return self.async_show_form(
+            step_id="tank",
+            data_schema=self.add_suggested_values_to_schema(
+                TANK_SCHEMA, self.config_entry.options
+            ),
+        )
+
+    async def async_step_calibrate(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Set the depth offset from a measured water depth.
+
+        The offset is the measured depth minus the current water column, so
+        the measurement has to be taken before the transmitter reports again.
+        A result outside ``DEPTH_OFFSET_RANGE`` is refused as a mistake. The
+        full depth, if set, is kept.
+
+        The step aborts with ``no_reading`` until a report has been seen, and
+        with ``unverified_scale`` for transmitter hardware whose pressure
+        scale is unverified: that has no water column at all, so waiting for
+        another report would not help.
+        """
+        data = self._loaded_data()
+        if data is None or data.reading is None or data.last_report is None:
+            return self.async_abort(reason="no_reading")
+        if (water_column := data.reading.water_column_inches) is None:
+            return self.async_abort(reason="unverified_scale")
+        reported = data.last_report
+
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            offset = round(user_input[CONF_MEASURED_DEPTH] - water_column, 1)
+            low, high = DEPTH_OFFSET_RANGE
+            if low <= offset <= high:
+                return self.async_create_entry(
+                    data={**self.config_entry.options, CONF_DEPTH_OFFSET: offset}
+                )
+            errors[CONF_MEASURED_DEPTH] = "implausible_depth"
+
+        return self.async_show_form(
+            step_id="calibrate",
+            data_schema=CALIBRATE_SCHEMA,
+            errors=errors,
+            description_placeholders={
+                "water_column": f"{water_column:.1f}",
+                "reported": dt_util.as_local(reported).strftime("%Y-%m-%d %H:%M"),
+            },
+        )
+
+    def _loaded_data(self) -> PTLevelData | None:
+        """Return the entry's latest coordinator snapshot, or ``None`` if not loaded."""
+        entry = self.config_entry
+        if entry.state is not ConfigEntryState.LOADED:
+            return None
+        return entry.runtime_data.data
 
 
 def _normalize_host(text: str) -> str | None:
