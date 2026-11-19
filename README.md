@@ -106,7 +106,7 @@ Water depth and percent full come from two settings per receiver, under
    reports. If that report has not reached the receiver yet, it asks you to
    press the button again, keeping the depth you typed. It then shows that
    report, your depth and the resulting **depth offset** (usually about 4–8
-   inches): save it, or go back and correct the depth without pressing the
+   inches, 100–200 mm): save it, or go back and correct the depth without pressing the
    button again. Once saved, **Water depth** appears. If the receiver does not
    answer when the form opens, calibration stops rather than using an old
    reading; if it misses a read later on, the form asks you to submit again
@@ -116,16 +116,21 @@ Water depth and percent full come from two settings per receiver, under
    the overflow. **Percent full** appears. Clear the full depth to remove only
    the percentage, or clear the depth offset to remove both tank sensors.
 
-You can also type a known depth offset in **Tank settings** instead of
-calibrating. Both values are in inches. Like the water column, tank level
+The forms use the units of your Home Assistant unit system: inches on US
+customary, millimetres on metric. You can also type a known depth offset in
+**Tank settings** instead of calibrating. Like the water column, tank level
 needs transmitter hardware 16; for other hardware, calibration explains that it
 is unavailable. Calibration also refuses a new report whose water column shows
-under 1.0 inch, which looks the same as a chamber out of the water or a leaking
-air tube. If you measured earlier against a report you can identify, for
-example during an install, work out the offset yourself (measured depth minus
-that report's water column, both in inches) and type it into **Tank
-settings**. A metric Home Assistant shows the water column in millimetres, so
-divide that by 25.4 first, or set the entity's display unit to inches.
+under 1 inch (25 mm), which looks the same as a chamber out of the water or a
+leaking air tube. If you measured earlier against a report you can identify,
+for example during an install, work out the offset yourself (measured depth
+minus that report's water column, as Home Assistant shows it) and type it into
+**Tank settings**.
+
+The sensors themselves follow Home Assistant's display units, which you can
+change per entity under its settings, **Unit of measurement**. On metric,
+Water column and Water depth show tenths of a millimetre by default; set the
+display precision there if you prefer whole millimetres.
 
 The chamber cannot sense water below its own air pocket. Once the water drops
 to the chamber, the water column reads about zero, so **Water depth** stops at

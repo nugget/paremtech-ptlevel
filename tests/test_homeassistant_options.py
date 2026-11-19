@@ -12,7 +12,11 @@ from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import CONF_HOST
 from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.helpers import entity_registry as er
-from homeassistant.util.unit_system import US_CUSTOMARY_SYSTEM
+from homeassistant.util.unit_system import (
+    METRIC_SYSTEM,
+    US_CUSTOMARY_SYSTEM,
+    UnitSystem,
+)
 from pytest_homeassistant_custom_component.common import (
     MockConfigEntry,
     async_fire_time_changed,
@@ -40,9 +44,13 @@ pytestmark = pytest.mark.usefixtures("enable_custom_integrations", "receiver")
 SAVE = {"next_step_id": "calibrate_save"}
 
 
-def _entry(hass: HomeAssistant, options: dict[str, Any]) -> MockConfigEntry:
+def _entry(
+    hass: HomeAssistant,
+    options: dict[str, Any],
+    system: UnitSystem = US_CUSTOMARY_SYSTEM,
+) -> MockConfigEntry:
     """Add an entry for the fake receiver, whose reading is 96.19 in."""
-    hass.config.units = US_CUSTOMARY_SYSTEM
+    hass.config.units = system
     entry = MockConfigEntry(
         domain=DOMAIN,
         title="WELLSW.TW",
@@ -54,9 +62,13 @@ def _entry(hass: HomeAssistant, options: dict[str, Any]) -> MockConfigEntry:
     return entry
 
 
-async def _setup(hass: HomeAssistant, options: dict[str, Any]) -> MockConfigEntry:
+async def _setup(
+    hass: HomeAssistant,
+    options: dict[str, Any],
+    system: UnitSystem = US_CUSTOMARY_SYSTEM,
+) -> MockConfigEntry:
     """Add and load an entry for the fake receiver."""
-    entry = _entry(hass, options)
+    entry = _entry(hass, options, system)
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
     return entry
@@ -470,3 +482,127 @@ async def test_calibrate_explains_an_unverified_scale(
 
     assert result.get("type") is FlowResultType.ABORT
     assert result.get("reason") == "unverified_scale"
+
+
+def _field(result: Any, key: str) -> dict[str, Any]:
+    """Return the number-selector config of a shown form's ``key`` field."""
+    for marker, selector in result["data_schema"].schema.items():
+        if marker.schema == key:
+            return selector.config
+    raise AssertionError(key)
+
+
+@pytest.mark.parametrize(
+    ("system", "expected"),
+    [
+        (
+            US_CUSTOMARY_SYSTEM,
+            {"unit": "in", "bounds": (-24.0, 60.0), "step": 0.1, "saved": (5.2, 104.5)},
+        ),
+        (
+            METRIC_SYSTEM,
+            {
+                "unit": "mm",
+                "bounds": (-609.0, 1524.0),
+                "step": 1.0,
+                "saved": (132.0, 2654.0),
+            },
+        ),
+    ],
+)
+async def test_tank_form_uses_the_unit_system(
+    hass: HomeAssistant, system: UnitSystem, expected: dict[str, Any]
+) -> None:
+    """Fields, bounds and saved values are shown in the unit system's unit."""
+    entry = await _setup(hass, {CONF_DEPTH_OFFSET: 5.2, CONF_FULL_DEPTH: 104.5}, system)
+
+    result = await _open(hass, entry, "tank")
+
+    offset = _field(result, CONF_DEPTH_OFFSET)
+    assert offset["unit_of_measurement"] == expected["unit"]
+    assert (offset["min"], offset["max"]) == expected["bounds"]
+    assert offset["step"] == expected["step"]
+    assert _field(result, CONF_FULL_DEPTH)["unit_of_measurement"] == expected["unit"]
+    assert _suggested(result) == dict(
+        zip((CONF_DEPTH_OFFSET, CONF_FULL_DEPTH), expected["saved"], strict=True)
+    )
+    placeholders = result.get("description_placeholders") or {}
+    assert placeholders.get("unit") == expected["unit"]
+
+
+async def test_tank_settings_in_millimetres_are_stored_in_inches(
+    hass: HomeAssistant,
+) -> None:
+    """A metric owner types millimetres; the options keep inches."""
+    entry = await _setup(hass, {}, METRIC_SYSTEM)
+
+    result = await _open(hass, entry, "tank")
+    await _submit(hass, result, {CONF_DEPTH_OFFSET: 132.0, CONF_FULL_DEPTH: 2654.0})
+
+    assert entry.options == {CONF_DEPTH_OFFSET: 5.1969, CONF_FULL_DEPTH: 104.4882}
+    assert _state(hass, "percent_full") == "97.0"
+    depth = _state(hass, "water_depth")
+    assert depth is not None
+    assert float(depth) == pytest.approx(101.39 * 25.4)
+
+    result = await _open(hass, entry, "tank")
+    assert _suggested(result) == {CONF_DEPTH_OFFSET: 132.0, CONF_FULL_DEPTH: 2654.0}
+
+
+async def test_calibrate_in_millimetres(
+    hass: HomeAssistant, receiver: FakeReceiver
+) -> None:
+    """Calibration shows and takes millimetres on a metric system."""
+    entry = await _setup(hass, {}, METRIC_SYSTEM)
+
+    result = await _open(hass, entry, "calibrate")
+    placeholders = result.get("description_placeholders") or {}
+    assert placeholders.get("water_column") == "2443"
+    assert placeholders.get("unit") == "mm"
+    assert _field(result, CONF_MEASURED_DEPTH)["unit_of_measurement"] == "mm"
+
+    _press(receiver, 33000)  # 91.23 in, 2317 mm
+    result = await _submit(hass, result, {CONF_MEASURED_DEPTH: 2440.0})
+
+    placeholders = result.get("description_placeholders") or {}
+    assert result.get("step_id") == "calibrate_confirm"
+    assert placeholders.get("water_column") == "2317"
+    assert placeholders.get("measured_depth") == "2440"
+    assert placeholders.get("offset") == "123"
+    assert placeholders.get("unit") == "mm"
+
+    result = await _submit(hass, result, {"next_step_id": "calibrate"})
+    assert _suggested(result) == {CONF_MEASURED_DEPTH: 2440.0}
+
+    result = await _submit(hass, result, {CONF_MEASURED_DEPTH: 2440.0})
+    result = await _submit(hass, result, SAVE)
+    assert result.get("type") is FlowResultType.CREATE_ENTRY
+    assert entry.options == {CONF_DEPTH_OFFSET: 4.8349}
+
+
+@pytest.mark.parametrize(
+    ("raw", "outcome", "shown"),
+    [
+        (10512, "low_reading", "24"),  # 0.95 in shows as 24 mm, under 25 mm
+        (10524, None, "25"),  # 1.00 in shows as 25 mm
+    ],
+)
+async def test_low_reading_cutoff_in_millimetres(
+    hass: HomeAssistant,
+    receiver: FakeReceiver,
+    raw: int,
+    outcome: str | None,
+    shown: str,
+) -> None:
+    """The cutoff applies to the water column as a metric owner sees it."""
+    entry = await _setup(hass, {}, METRIC_SYSTEM)
+    result = await _open(hass, entry, "calibrate")
+    _press(receiver, raw)
+
+    result = await _submit(hass, result, {CONF_MEASURED_DEPTH: 150.0})
+
+    assert (result.get("description_placeholders") or {}).get("water_column") == shown
+    if outcome is None:
+        assert result.get("step_id") == "calibrate_confirm"
+    else:
+        assert result.get("errors") == {"base": outcome}

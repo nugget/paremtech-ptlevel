@@ -99,17 +99,17 @@
       },
       "calibrate": {
         "title": "Calibrate from a measured depth",
-        "description": "The receiver's latest report, at {reported}, shows {water_column} in of water above the chamber. With this form open, press the transmitter's button and watch its light: if it does not show that the report went out, press again. Then measure the water from the tank floor to the surface straight away, while no water is being drawn or pumped in, enter the depth and submit. Submitting looks for the report your button press sent, and shows it with the resulting offset for you to confirm before anything is saved.",
+        "description": "The receiver's latest report, at {reported}, shows {water_column} {unit} of water above the chamber. With this form open, press the transmitter's button and watch its light: if it does not show that the report went out, press again. Then measure the water from the tank floor to the surface straight away, while no water is being drawn or pumped in, enter the depth and submit. Submitting looks for the report your button press sent, and shows it with the resulting offset for you to confirm before anything is saved.",
         "data": {
           "measured_depth": "Measured water depth"
         },
         "data_description": {
-          "measured_depth": "Inches of water from the tank floor to the surface."
+          "measured_depth": "Water from the tank floor to the surface, in {unit}."
         }
       },
       "calibrate_confirm": {
         "title": "Confirm the calibration",
-        "description": "The report at {reported} shows {water_column} in of water above the chamber. You measured {measured_depth} in, so the depth offset will be {offset} in.",
+        "description": "The report at {reported} shows {water_column} {unit} of water above the chamber. You measured {measured_depth} {unit}, so the depth offset will be {offset} {unit}.",
         "menu_options": {
           "calibrate_save": "Save this offset",
           "calibrate": "Change the measured depth"
@@ -117,21 +117,21 @@
       },
       "tank": {
         "title": "Tank settings",
-        "description": "Water depth is the water column plus the depth offset, and Percent full is the water depth as a share of the full depth. Both need a depth offset: clear it to remove them, and clear the full depth to remove only the percentage. The chamber cannot sense water below its own air pocket, so the lowest reading means at or below the chamber.",
+        "description": "Water depth is the water column plus the depth offset, and Percent full is the water depth as a share of the full depth. Both need a depth offset: clear it to remove them, and clear the full depth to remove only the percentage. The chamber cannot sense water below its own air pocket, so the lowest reading means at or below the chamber. Lengths are in {unit}, the unit Home Assistant uses for your unit system.",
         "data": {
           "depth_offset": "Depth offset",
           "full_depth": "Full depth"
         },
         "data_description": {
-          "depth_offset": "Inches to add to the water column to get the water depth, about the height of the chamber's air pocket above the floor. Calibrating sets it for you.",
-          "full_depth": "Water depth, in inches, that counts as 100%. Use the level where the fill pump stops, or the overflow if nothing stops the fill."
+          "depth_offset": "How much to add to the water column to get the water depth: about the height of the chamber's air pocket above the floor. Calibrating sets it for you.",
+          "full_depth": "Water depth that counts as 100%. Use the level where the fill pump stops, or the overflow if nothing stops the fill."
         }
       }
     },
     "error": {
       "cannot_read": "Could not read the receiver just now. Your button press still counts: submit again in a moment.",
       "implausible_depth": "That measurement is too far from the reading to be right. Check the measurement, and that the transmitter has reported since the chamber went in.",
-      "low_reading": "The new report shows almost no water above the chamber (under 1 inch), which looks the same as a chamber out of the water or a leaking air tube. Check the chamber and its tube, press the button again, and resubmit.",
+      "low_reading": "The new report shows almost no water above the chamber (under 1 inch, about 25 mm), which looks the same as a chamber out of the water or a leaking air tube. Check the chamber and its tube, press the button again, and resubmit.",
       "no_new_report": "No new report has reached the receiver since this form opened. Press the transmitter's button again, check that its light shows the report went out, wait a few seconds, and submit again."
     },
     "abort": {

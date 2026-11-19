@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any
 import probatio
 from homeassistant import config_entries
 from homeassistant.config_entries import ConfigEntryState, OptionsFlowWithReload
-from homeassistant.const import CONF_HOST, UnitOfLength
+from homeassistant.const import CONF_HOST
 from homeassistant.core import callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.selector import (
@@ -34,6 +34,7 @@ from .ptlevel import (
     PTLevelUnsupportedError,
     ReceiverStatus,
 )
+from .units import LengthUnit, length_unit
 
 if TYPE_CHECKING:
     from datetime import datetime
@@ -48,35 +49,49 @@ _LOGGER = logging.getLogger(__name__)
 MAX_DEPTH = 600.0
 """Deepest water depth the forms accept, in inches (50 ft)."""
 
+TANK_LENGTH_OPTIONS = (CONF_DEPTH_OFFSET, CONF_FULL_DEPTH)
+"""Tank settings that are lengths, stored in inches and shown in the owner's unit."""
 
-def _inches(minimum: float, maximum: float) -> NumberSelector:
-    """Return a typed-in number field in inches, to a tenth of an inch."""
+
+def _length_field(
+    units: LengthUnit, low_inches: float, high_inches: float
+) -> NumberSelector:
+    """Return a typed-in length field in the owner's unit, for a range in inches."""
+    low, high = units.bounds(low_inches, high_inches)
     return NumberSelector(
         NumberSelectorConfig(
-            min=minimum,
-            max=maximum,
-            step=0.1,
-            unit_of_measurement=UnitOfLength.INCHES,
+            min=low,
+            max=high,
+            step=units.step,
+            unit_of_measurement=units.unit,
             mode=NumberSelectorMode.BOX,
         )
     )
 
 
-TANK_SCHEMA = probatio.Schema(
-    {
-        probatio.Optional(CONF_DEPTH_OFFSET): _inches(*DEPTH_OFFSET_RANGE),
-        probatio.Optional(CONF_FULL_DEPTH): _inches(1.0, MAX_DEPTH),
-    }
-)
-"""Both tank settings are optional, and an empty field removes its option.
+def _tank_schema(units: LengthUnit) -> probatio.Schema:
+    """Return the tank settings form, in the owner's length unit.
 
-The depth offset deliberately has no default: an owner who opens the form
-only to set the full depth must not end up with an uncalibrated offset of
-zero, which would create a Water depth that is really the water column.
-"""
-CALIBRATE_SCHEMA = probatio.Schema(
-    {probatio.Required(CONF_MEASURED_DEPTH): _inches(0.0, MAX_DEPTH)}
-)
+    Both settings are optional, and an empty field removes its option. The
+    depth offset deliberately has no default: an owner who opens the form
+    only to set the full depth must not end up with an uncalibrated offset of
+    zero, which would create a Water depth that is really the water column.
+    """
+    return probatio.Schema(
+        {
+            probatio.Optional(CONF_DEPTH_OFFSET): _length_field(
+                units, *DEPTH_OFFSET_RANGE
+            ),
+            probatio.Optional(CONF_FULL_DEPTH): _length_field(units, 1.0, MAX_DEPTH),
+        }
+    )
+
+
+def _calibrate_schema(units: LengthUnit) -> probatio.Schema:
+    """Return the calibrate form, taking the measured depth in the owner's unit."""
+    return probatio.Schema(
+        {probatio.Required(CONF_MEASURED_DEPTH): _length_field(units, 0.0, MAX_DEPTH)}
+    )
 
 
 class PTLevelConfigFlow(  # pyright: ignore[reportGeneralTypeIssues]
@@ -201,23 +216,33 @@ class PTLevelOptionsFlow(OptionsFlowWithReload):
     ) -> ConfigFlowResult:
         """Edit the depth offset and the full depth.
 
-        An empty field removes its option. Without a depth offset there are no
-        tank entities at all, and without a full depth there is no percentage;
-        a full depth saved on its own waits for the offset.
+        The form shows lengths in the owner's unit (see ``units.py``) and
+        stores them in inches. An empty field removes its option. Without a
+        depth offset there are no tank entities at all, and without a full
+        depth there is no percentage; a full depth saved on its own waits for
+        the offset.
         """
+        units = length_unit(self.hass.config.units)
         if user_input is not None:
             options = {
-                key: round(value, 1)
-                for key in (CONF_DEPTH_OFFSET, CONF_FULL_DEPTH)
+                key: units.to_inches(value)
+                for key in TANK_LENGTH_OPTIONS
                 if (value := user_input.get(key)) is not None
             }
             return self.async_create_entry(data=options)
 
+        saved = self.config_entry.options
+        suggested = {
+            key: units.from_inches(saved[key])
+            for key in TANK_LENGTH_OPTIONS
+            if key in saved
+        }
         return self.async_show_form(
             step_id="tank",
             data_schema=self.add_suggested_values_to_schema(
-                TANK_SCHEMA, self.config_entry.options
+                _tank_schema(units), suggested
             ),
+            description_placeholders={"unit": units.unit},
         )
 
     async def async_step_calibrate(
@@ -236,8 +261,9 @@ class PTLevelOptionsFlow(OptionsFlowWithReload):
         shown for confirmation, where the owner can save or go back to correct
         the depth without pressing the button again.
 
-        A submission is also refused when the new report's water column, at
-        the one decimal the owner sees, is under ``MIN_CALIBRATION_WATER_COLUMN``
+        Depths are shown and typed in the owner's unit (see ``units.py``) and
+        stored in inches. A submission is also refused when the new report's
+        water column, as the owner sees it, is under ``MIN_CALIBRATION_WATER_COLUMN``
         (``low_reading``, which looks like a chamber out of the water or a
         leaking tube), or when the offset falls outside ``DEPTH_OFFSET_RANGE``
         (``implausible_depth``). If the receiver does not answer once the
@@ -250,6 +276,7 @@ class PTLevelOptionsFlow(OptionsFlowWithReload):
         (``no_reading``), and for transmitter hardware without a verified scale
         (``unverified_scale``). The full depth, if set, is kept.
         """
+        units = length_unit(self.hass.config.units)
         read = await self._read_receiver()
         if read is None or (not read.answered and self._baseline is None):
             return self.async_abort(reason="not_loaded")
@@ -260,7 +287,11 @@ class PTLevelOptionsFlow(OptionsFlowWithReload):
             return self.async_abort(reason="unverified_scale")
         if not read.answered:
             return self._show_calibrate(
-                water_column, data.last_report, user_input, {"base": "cannot_read"}
+                units,
+                water_column,
+                data.last_report,
+                user_input,
+                {"base": "cannot_read"},
             )
         report = (data.last_report, data.reading)
         if self._baseline is None:
@@ -268,12 +299,14 @@ class PTLevelOptionsFlow(OptionsFlowWithReload):
 
         errors: dict[str, str] = {}
         if user_input is not None:
-            measured_depth = user_input[CONF_MEASURED_DEPTH]
-            offset = round(measured_depth - water_column, 1)
+            measured_depth = units.to_inches(user_input[CONF_MEASURED_DEPTH])
+            offset = units.round_inches(measured_depth - water_column)
             low, high = DEPTH_OFFSET_RANGE
             if report == self._baseline:
                 errors["base"] = "no_new_report"
-            elif _shown(water_column) < MIN_CALIBRATION_WATER_COLUMN:
+            elif _shown(units, water_column) < units.from_inches(
+                MIN_CALIBRATION_WATER_COLUMN
+            ):
                 errors["base"] = "low_reading"
             elif not low <= offset <= high:
                 errors[CONF_MEASURED_DEPTH] = "implausible_depth"
@@ -286,10 +319,13 @@ class PTLevelOptionsFlow(OptionsFlowWithReload):
                 )
                 return await self.async_step_calibrate_confirm()
 
-        return self._show_calibrate(water_column, data.last_report, user_input, errors)
+        return self._show_calibrate(
+            units, water_column, data.last_report, user_input, errors
+        )
 
     def _show_calibrate(
         self,
+        units: LengthUnit,
         water_column: float,
         reported: datetime,
         user_input: dict[str, Any] | None,
@@ -297,21 +333,25 @@ class PTLevelOptionsFlow(OptionsFlowWithReload):
     ) -> ConfigFlowResult:
         """Show the calibrate form, keeping whatever depth the owner last gave.
 
-        On a re-show after an error that is the owner's submission; coming
-        back from the confirmation it is the depth they confirmed.
+        On a re-show after an error that is the owner's submission, already
+        in their unit; coming back from the confirmation it is the depth they
+        confirmed, which is stored in inches.
         """
         suggested = user_input
         if suggested is None and self._pending is not None:
-            suggested = {CONF_MEASURED_DEPTH: self._pending.measured_depth}
+            suggested = {
+                CONF_MEASURED_DEPTH: units.from_inches(self._pending.measured_depth)
+            }
         return self.async_show_form(
             step_id="calibrate",
             data_schema=self.add_suggested_values_to_schema(
-                CALIBRATE_SCHEMA, suggested
+                _calibrate_schema(units), suggested
             ),
             errors=errors,
             description_placeholders={
-                "water_column": f"{_shown(water_column):.1f}",
+                "water_column": _format_shown(units, water_column),
                 "reported": _when(reported),
+                "unit": units.unit,
             },
         )
 
@@ -322,14 +362,16 @@ class PTLevelOptionsFlow(OptionsFlowWithReload):
         """Show the report and offset a calibration will use, to save or change."""
         if (pending := self._pending) is None:
             return await self.async_step_calibrate()
+        units = length_unit(self.hass.config.units)
         return self.async_show_menu(
             step_id="calibrate_confirm",
             menu_options=["calibrate_save", "calibrate"],
             description_placeholders={
-                "water_column": f"{_shown(pending.water_column):.1f}",
+                "water_column": _format_shown(units, pending.water_column),
                 "reported": _when(pending.reported),
-                "measured_depth": f"{pending.measured_depth:.1f}",
-                "offset": f"{pending.offset:.1f}",
+                "measured_depth": units.format(pending.measured_depth),
+                "offset": units.format(pending.offset),
+                "unit": units.unit,
             },
         )
 
@@ -368,7 +410,10 @@ class PTLevelOptionsFlow(OptionsFlowWithReload):
 
 @dataclass(frozen=True, slots=True)
 class _Calibration:
-    """A calibration computed from a new report, waiting for confirmation."""
+    """A calibration computed from a new report, waiting for confirmation.
+
+    Depths are in inches, whatever unit the owner typed them in.
+    """
 
     water_column: float
     reported: datetime
@@ -384,9 +429,14 @@ class _Read:
     answered: bool
 
 
-def _shown(water_column: float) -> float:
-    """Return the water column as the owner sees it: one decimal, never negative."""
-    return round(water_column, 1) if water_column > 0 else 0.0
+def _shown(units: LengthUnit, water_column: float) -> float:
+    """Return the water column as the owner sees it: in their unit, never negative."""
+    return units.from_inches(water_column) if water_column > 0 else 0.0
+
+
+def _format_shown(units: LengthUnit, water_column: float) -> str:
+    """Return the water column as text, as the owner sees it."""
+    return f"{_shown(units, water_column):.{units.decimals}f}"
 
 
 def _when(moment: datetime) -> str:
