@@ -252,18 +252,39 @@ async def test_calibrate_refuses_a_report_that_arrived_while_open(
     assert entry.options == {CONF_DEPTH_OFFSET: 4.8}
 
 
+@pytest.mark.parametrize(
+    ("raw", "shown"),
+    [
+        (10376, "0.4"),  # 0.40 in
+        (10512, "0.9"),  # 0.95 in: just under the cutoff as displayed
+        (10271, "0.0"),  # -0.02 in: no pressure at all
+    ],
+)
 async def test_calibrate_refuses_a_near_zero_reading(
-    hass: HomeAssistant, receiver: FakeReceiver
+    hass: HomeAssistant, receiver: FakeReceiver, raw: int, shown: str
 ) -> None:
     """A water column under an inch could be a dry chamber or a leak."""
-    receiver.set_reading(10376)
+    receiver.set_reading(raw)
     entry = await _setup(hass, {})
 
     result = await _open(hass, entry, "calibrate")
 
     assert result.get("type") is FlowResultType.ABORT
     assert result.get("reason") == "low_reading"
-    assert (result.get("description_placeholders") or {}).get("water_column") == "0.4"
+    assert (result.get("description_placeholders") or {}).get("water_column") == shown
+
+
+async def test_calibrate_accepts_a_reading_shown_as_one_inch(
+    hass: HomeAssistant, receiver: FakeReceiver
+) -> None:
+    """A column that rounds to 1.0 in, as the owner sees it, can be calibrated."""
+    receiver.set_reading(10518)  # 0.97 in
+    entry = await _setup(hass, {})
+
+    result = await _open(hass, entry, "calibrate")
+
+    assert result.get("type") is FlowResultType.FORM
+    assert (result.get("description_placeholders") or {}).get("water_column") == "1.0"
 
 
 async def test_calibrate_needs_a_loaded_entry(

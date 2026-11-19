@@ -114,8 +114,9 @@ Water depth and percent full come from two settings per receiver, under
 You can also type a known depth offset in **Tank settings** instead of
 calibrating. Both values are in inches. Like the water column, tank level
 needs transmitter hardware 16; for other hardware, calibration explains that it
-is unavailable. Calibration also refuses a water column under 1 inch, which
-looks the same as a chamber out of the water or a leaking air tube.
+is unavailable. Calibration also refuses a water column that shows under
+1.0 inch, which looks the same as a chamber out of the water or a leaking air
+tube.
 
 The chamber cannot sense water below its own air pocket. Once the water drops
 to the chamber, the water column reads about zero, so **Water depth** stops at

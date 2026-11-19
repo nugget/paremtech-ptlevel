@@ -225,9 +225,10 @@ class PTLevelOptionsFlow(OptionsFlowWithReload):
         The step aborts, each with its own explanation, when the entry is not
         loaded (``not_loaded``), before any report (``no_reading``), for
         transmitter hardware without a verified scale (``unverified_scale``),
-        and when the water column is under ``MIN_CALIBRATION_WATER_COLUMN``
-        (``low_reading``), which looks the same as a chamber out of the water
-        or a leaking air tube.
+        and when the water column, at the one decimal the owner sees, is under
+        ``MIN_CALIBRATION_WATER_COLUMN`` (``low_reading``), which looks the
+        same as a chamber out of the water or a leaking air tube. Comparing
+        the shown value means a refused reading never displays as 1.0 in.
         """
         data = self._loaded_data()
         if data is None:
@@ -236,10 +237,12 @@ class PTLevelOptionsFlow(OptionsFlowWithReload):
             return self.async_abort(reason="no_reading")
         if (water_column := data.reading.water_column_inches) is None:
             return self.async_abort(reason="unverified_scale")
-        if water_column < MIN_CALIBRATION_WATER_COLUMN:
+        # A negative column shows as 0.0, never -0.0 or a negative depth.
+        shown_column = round(water_column, 1) if water_column > 0 else 0.0
+        if shown_column < MIN_CALIBRATION_WATER_COLUMN:
             return self.async_abort(
                 reason="low_reading",
-                description_placeholders={"water_column": f"{water_column:.1f}"},
+                description_placeholders={"water_column": f"{shown_column:.1f}"},
             )
         reported = data.last_report
 
