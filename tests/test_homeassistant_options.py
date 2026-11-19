@@ -623,3 +623,26 @@ async def test_tank_form_saves_unchanged_at_the_range_edges(
     result = await _submit(hass, result, prefilled)
 
     assert result.get("type") is FlowResultType.CREATE_ENTRY
+
+
+async def test_unit_system_change_while_a_form_is_open(
+    hass: HomeAssistant, receiver: FakeReceiver
+) -> None:
+    """A submission is read in the units its form was shown in."""
+    entry = await _setup(hass, {}, METRIC_SYSTEM)
+
+    result = await _open(hass, entry, "tank")
+    hass.config.units = US_CUSTOMARY_SYSTEM
+    await _submit(hass, result, {CONF_DEPTH_OFFSET: 132.0})
+    assert entry.options == {CONF_DEPTH_OFFSET: 5.1969}
+
+    hass.config.units = METRIC_SYSTEM
+    result = await _open(hass, entry, "calibrate")
+    _press(receiver, 33000)
+    hass.config.units = US_CUSTOMARY_SYSTEM
+    result = await _submit(hass, result, {CONF_MEASURED_DEPTH: 2440.0})
+    placeholders = result.get("description_placeholders") or {}
+    assert placeholders.get("offset") == "123"
+    assert placeholders.get("unit") == "mm"
+    result = await _submit(hass, result, SAVE)
+    assert entry.options == {CONF_DEPTH_OFFSET: 4.8349}
