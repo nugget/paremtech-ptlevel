@@ -33,7 +33,6 @@ from homeassistant.const import (
     UnitOfElectricPotential,
     UnitOfLength,
     UnitOfTemperature,
-    UnitOfVolume,
 )
 from homeassistant.util import dt as dt_util
 
@@ -47,7 +46,7 @@ from .tank import (
     TankSettings,
     tank_sensor_keys,
 )
-from .units import volume_unit
+from .units import from_gallons, volume_unit
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -58,7 +57,6 @@ if TYPE_CHECKING:
 
     from . import PTLevelConfigEntry
     from .coordinator import PTLevelCoordinator, PTLevelData
-    from .units import FormUnit
 
 type SensorValue = float | int | str | datetime | None
 
@@ -305,10 +303,10 @@ class PTLevelTankSensorEntity(PTLevelEntity, SensorEntity):
         """Initialize a sensor for ``description`` on a tank set up as ``tank``."""
         super().__init__(coordinator, description)
         self._tank = tank
-        self._volume_unit: FormUnit | None = None
+        self._volume_unit: str | None = None
         if description.volume:
             self._volume_unit = volume_unit(coordinator.hass.config.units)
-            self._attr_native_unit_of_measurement = self._volume_unit.unit
+            self._attr_native_unit_of_measurement = self._volume_unit
 
     @property
     def available(self) -> bool:
@@ -322,9 +320,4 @@ class PTLevelTankSensorEntity(PTLevelEntity, SensorEntity):
         value = self.entity_description.value_fn(self._tank, water_column)
         if value is None or self._volume_unit is None:
             return value
-        return round(
-            self._volume_unit.converter.convert(
-                value, UnitOfVolume.GALLONS, self._volume_unit.unit
-            ),
-            1,
-        )
+        return from_gallons(value, self._volume_unit)

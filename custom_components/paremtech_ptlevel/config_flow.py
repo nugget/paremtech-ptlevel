@@ -35,7 +35,16 @@ from .ptlevel import (
     PTLevelUnsupportedError,
     ReceiverStatus,
 )
-from .units import FormUnit, length_unit, volume_unit
+from .units import (
+    displayed,
+    format_length,
+    gallons_to_field,
+    inches_to_field,
+    length_unit,
+    to_gallons,
+    to_inches,
+    volume_unit,
+)
 
 if TYPE_CHECKING:
     from datetime import datetime
@@ -51,83 +60,66 @@ _LOGGER = logging.getLogger(__name__)
 MAX_DEPTH = 600.0
 """Deepest water depth the forms accept, in inches (50 ft)."""
 
+TANK_LENGTH_RANGES: dict[str, tuple[float, float]] = {
+    CONF_DEPTH_OFFSET: DEPTH_OFFSET_RANGE,
+    CONF_FULL_DEPTH: (1.0, MAX_DEPTH),
+}
+"""Each length setting's accepted range, in the stored unit (inches)."""
+
 MAX_CAPACITY = 1_000_000.0
 """Largest tank capacity the forms accept, in US gallons."""
 
-TANK_RANGES: dict[str, tuple[float, float]] = {
-    CONF_DEPTH_OFFSET: DEPTH_OFFSET_RANGE,
-    CONF_FULL_DEPTH: (1.0, MAX_DEPTH),
-    CONF_CAPACITY: (1.0, MAX_CAPACITY),
-}
-"""Each tank setting's accepted range, in its stored unit (inches or US gallons).
 
-The form's field bounds and the clamping of its prefilled values both come
-from here, so they cannot drift apart.
-"""
+def _length_field(unit: str, low: float, high: float) -> NumberSelector:
+    """Return a typed-in length field in ``unit``, for a range in inches.
 
-
-def _tank_units(system: UnitSystem) -> dict[str, FormUnit]:
-    """Return the unit each tank setting is shown in for a unit system.
-
-    Lengths are stored in inches and the capacity in US gallons (see
-    ``units.py``).
+    ``step`` only sets the keyboard increment, and ``any`` keeps fractional
+    converted bounds from making ordinary entries look off-step.
     """
-    length = length_unit(system)
-    return {
-        CONF_DEPTH_OFFSET: length,
-        CONF_FULL_DEPTH: length,
-        CONF_CAPACITY: volume_unit(system),
-    }
-
-
-def _unit_field(units: FormUnit, low: float, high: float) -> NumberSelector:
-    """Return a typed-in number field in the owner's unit.
-
-    ``low`` and ``high`` are in the stored unit, as the options keep them.
-    """
-    low, high = units.bounds(low, high)
     return NumberSelector(
         NumberSelectorConfig(
-            min=low,
-            max=high,
-            step=units.step,
-            unit_of_measurement=units.unit,
+            min=inches_to_field(low, unit),
+            max=inches_to_field(high, unit),
+            step="any",
+            unit_of_measurement=unit,
             mode=NumberSelectorMode.BOX,
         )
     )
 
 
-def _tank_schema(units: dict[str, FormUnit]) -> probatio.Schema:
-    """Return the tank settings form, in the owner's units.
+def _capacity_field(unit: str) -> NumberSelector:
+    """Return the typed-in capacity field in volume ``unit``."""
+    return NumberSelector(
+        NumberSelectorConfig(
+            min=gallons_to_field(1.0, unit),
+            max=gallons_to_field(MAX_CAPACITY, unit),
+            step="any",
+            unit_of_measurement=unit,
+            mode=NumberSelectorMode.BOX,
+        )
+    )
+
+
+def _tank_schema(length: str, volume: str) -> probatio.Schema:
+    """Return the tank settings form, in the owner's length and volume units.
 
     Every setting is optional, and an empty field removes its option. The
     depth offset deliberately has no default: an owner who opens the form
     only to set the full depth must not end up with an uncalibrated offset of
     zero, which would create a Water depth that is really the water column.
     """
-    return probatio.Schema(
-        {
-            probatio.Optional(key): _unit_field(units[key], *TANK_RANGES[key])
-            for key in TANK_RANGES
-        }
-    )
+    fields: dict[Any, NumberSelector] = {
+        probatio.Optional(key): _length_field(length, *TANK_LENGTH_RANGES[key])
+        for key in TANK_LENGTH_RANGES
+    }
+    fields[probatio.Optional(CONF_CAPACITY)] = _capacity_field(volume)
+    return probatio.Schema(fields)
 
 
-def _prefill(units: FormUnit, value: float, valid: tuple[float, float]) -> float:
-    """Return a saved value as the form prefills it, inside the field's bounds.
-
-    Rounding to the shown unit can move a value at the very edge of its range
-    one step outside the field's bounds, which are rounded inward; the form
-    would then refuse to save unchanged. Clamping moves it at most one step.
-    """
-    low, high = units.bounds(*valid)
-    return min(max(units.from_stored(value), low), high)
-
-
-def _calibrate_schema(units: FormUnit) -> probatio.Schema:
+def _calibrate_schema(unit: str) -> probatio.Schema:
     """Return the calibrate form, taking the measured depth in the owner's unit."""
     return probatio.Schema(
-        {probatio.Required(CONF_MEASURED_DEPTH): _unit_field(units, 0.0, MAX_DEPTH)}
+        {probatio.Required(CONF_MEASURED_DEPTH): _length_field(unit, 0.0, MAX_DEPTH)}
     )
 
 
@@ -262,35 +254,38 @@ class PTLevelOptionsFlow(OptionsFlowWithReload):
         """Edit the depth offset, the full depth and the capacity.
 
         The form shows each setting in the owner's unit (see ``units.py``) and
-        stores it in inches or US gallons. An empty field removes its option.
-        Without a depth offset there are no tank entities at all; a full depth
-        adds the percentage, a capacity adds the tank capacity, and both add
-        the water volume. Settings saved without an offset wait for one.
+        stores lengths in inches and the capacity in US gallons. An empty
+        field removes its option. Without a depth offset there are no tank
+        entities at all; a full depth adds the percentage, a capacity adds the
+        tank capacity, and both add the water volume. Settings saved without
+        an offset wait for one.
         """
-        units = _tank_units(self._unit_system(user_input))
+        system = self._unit_system(user_input)
+        length, volume = length_unit(system), volume_unit(system)
         if user_input is not None:
             options = {
-                key: unit.to_stored(value)
-                for key, unit in units.items()
+                key: to_inches(value, length)
+                for key in TANK_LENGTH_RANGES
                 if (value := user_input.get(key)) is not None
             }
+            if (capacity := user_input.get(CONF_CAPACITY)) is not None:
+                options[CONF_CAPACITY] = to_gallons(capacity, volume)
             return self.async_create_entry(data=options)
 
         saved = self.config_entry.options
         suggested = {
-            key: _prefill(unit, saved[key], TANK_RANGES[key])
-            for key, unit in units.items()
+            key: inches_to_field(saved[key], length)
+            for key in TANK_LENGTH_RANGES
             if key in saved
         }
+        if CONF_CAPACITY in saved:
+            suggested[CONF_CAPACITY] = gallons_to_field(saved[CONF_CAPACITY], volume)
         return self.async_show_form(
             step_id="tank",
             data_schema=self.add_suggested_values_to_schema(
-                _tank_schema(units), suggested
+                _tank_schema(length, volume), suggested
             ),
-            description_placeholders={
-                "unit": units[CONF_DEPTH_OFFSET].unit,
-                "volume_unit": units[CONF_CAPACITY].unit,
-            },
+            description_placeholders={"unit": length, "volume_unit": volume},
         )
 
     async def async_step_calibrate(
@@ -324,7 +319,7 @@ class PTLevelOptionsFlow(OptionsFlowWithReload):
         (``no_reading``), and for transmitter hardware without a verified scale
         (``unverified_scale``). The other tank settings are kept.
         """
-        units = length_unit(self._unit_system(user_input))
+        unit = length_unit(self._unit_system(user_input))
         read = await self._read_receiver()
         if read is None or (not read.answered and self._baseline is None):
             return self.async_abort(reason="not_loaded")
@@ -335,7 +330,7 @@ class PTLevelOptionsFlow(OptionsFlowWithReload):
             return self.async_abort(reason="unverified_scale")
         if not read.answered:
             return self._show_calibrate(
-                units,
+                unit,
                 water_column,
                 data.last_report,
                 user_input,
@@ -347,13 +342,13 @@ class PTLevelOptionsFlow(OptionsFlowWithReload):
 
         errors: dict[str, str] = {}
         if user_input is not None:
-            measured_depth = units.to_stored(user_input[CONF_MEASURED_DEPTH])
-            offset = units.round_stored(measured_depth - water_column)
+            measured_depth = to_inches(user_input[CONF_MEASURED_DEPTH], unit)
+            offset = round(measured_depth - water_column, 4)
             low, high = DEPTH_OFFSET_RANGE
             if report == self._baseline:
                 errors["base"] = "no_new_report"
-            elif _shown(units, water_column) < units.from_stored(
-                MIN_CALIBRATION_WATER_COLUMN
+            elif displayed(max(water_column, 0.0), unit) < displayed(
+                MIN_CALIBRATION_WATER_COLUMN, unit
             ):
                 errors["base"] = "low_reading"
             elif not low <= offset <= high:
@@ -368,12 +363,12 @@ class PTLevelOptionsFlow(OptionsFlowWithReload):
                 return await self.async_step_calibrate_confirm()
 
         return self._show_calibrate(
-            units, water_column, data.last_report, user_input, errors
+            unit, water_column, data.last_report, user_input, errors
         )
 
     def _show_calibrate(
         self,
-        units: FormUnit,
+        unit: str,
         water_column: float,
         reported: datetime,
         user_input: dict[str, Any] | None,
@@ -388,18 +383,18 @@ class PTLevelOptionsFlow(OptionsFlowWithReload):
         suggested = user_input
         if suggested is None and self._pending is not None:
             suggested = {
-                CONF_MEASURED_DEPTH: units.from_stored(self._pending.measured_depth)
+                CONF_MEASURED_DEPTH: inches_to_field(self._pending.measured_depth, unit)
             }
         return self.async_show_form(
             step_id="calibrate",
             data_schema=self.add_suggested_values_to_schema(
-                _calibrate_schema(units), suggested
+                _calibrate_schema(unit), suggested
             ),
             errors=errors,
             description_placeholders={
-                "water_column": _format_shown(units, water_column),
+                "water_column": format_length(max(water_column, 0.0), unit),
                 "reported": _when(reported),
-                "unit": units.unit,
+                "unit": unit,
             },
         )
 
@@ -412,16 +407,16 @@ class PTLevelOptionsFlow(OptionsFlowWithReload):
             return await self.async_step_calibrate()
         # The confirmation belongs to the form just submitted, so it keeps
         # that form's units.
-        units = length_unit(self._shown_system or self.hass.config.units)
+        unit = length_unit(self._shown_system or self.hass.config.units)
         return self.async_show_menu(
             step_id="calibrate_confirm",
             menu_options=["calibrate_save", "calibrate"],
             description_placeholders={
-                "water_column": _format_shown(units, pending.water_column),
+                "water_column": format_length(max(pending.water_column, 0.0), unit),
                 "reported": _when(pending.reported),
-                "measured_depth": units.format(pending.measured_depth),
-                "offset": units.format(pending.offset),
-                "unit": units.unit,
+                "measured_depth": format_length(pending.measured_depth, unit),
+                "offset": format_length(pending.offset, unit),
+                "unit": unit,
             },
         )
 
@@ -488,16 +483,6 @@ class _Read:
 
     data: PTLevelData
     answered: bool
-
-
-def _shown(units: FormUnit, water_column: float) -> float:
-    """Return the water column as the owner sees it: in their unit, never negative."""
-    return units.from_stored(water_column) if water_column > 0 else 0.0
-
-
-def _format_shown(units: FormUnit, water_column: float) -> str:
-    """Return the water column as text, as the owner sees it."""
-    return f"{_shown(units, water_column):.{units.decimals}f}"
 
 
 def _when(moment: datetime) -> str:
